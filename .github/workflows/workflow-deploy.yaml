@@ -26,6 +26,6 @@ jobs:
           set -e
           cd k8s
           kubectl apply -f job.yaml
-          kubectl -n devops-project wait --for=condition=complete devops-project-job --timeout=30m
+          kubectl -n devops-project wait --for=condition=complete job/devops-project-job --timeout=30m
           
           kubectl apply -f app.yaml
