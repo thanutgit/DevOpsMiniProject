@@ -29,6 +29,4 @@ func main() {
 			panic(err)
 		}
 	}
-
-	log.Fatal("ไม่เข้าเงื่อนไข")
 }
