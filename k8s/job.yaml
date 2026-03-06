@@ -6,7 +6,7 @@ metadata:
 apiVersion: batch/v1
 Kind: Job
 metadata:
-  name: devops-project
+  name: devops-project-job
   namespace: devops-project
 spec:
   backoffLimit: 1
@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: migrate
-          image: ghcr.io/thanutgit/devopsminiproject:v2026.03.06-5
+          image: ghcr.io/thanutgit/devopsminiproject:v2026.03.06-6
           env:
             - name: APP_SERVICE
               value: "migrator"
