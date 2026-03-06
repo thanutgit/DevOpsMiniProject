@@ -18,15 +18,15 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
-    steps:
+    steps:  
       - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        run: echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build Image
         run: |
           docker build -t ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }} .
-
-      - name: Login to GHCR
-        run: echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Push image
         run: |
