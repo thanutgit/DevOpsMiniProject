@@ -11,21 +11,21 @@ func main() {
 	cfg := config.GetConfig()
 	db, err := database.InitDatabase()
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Panic(err.Error())
 		panic(err)
 	}
 
 	if cfg.Server.Service == "server" {
 		err := server.InitApiServer(db)
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Panic(err.Error())
 			panic(err)
 
 		}
 	} else if cfg.Server.Service == "migrator" {
 		err := database.MigrateDatabase(db)
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Panic(err.Error())
 			panic(err)
 		}
 	}
