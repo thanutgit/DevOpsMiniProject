@@ -23,4 +23,4 @@ jobs:
 
       - name: Build Image
         run: |
-          docker build -t ghcr.io/thanutgit/DevOpsMiniProject:${{ github.event.inputs.tag }} .
+          docker build -t ghcr.io/thanutgit/devOpsMiniProject:${{ github.event.inputs.tag }} .
