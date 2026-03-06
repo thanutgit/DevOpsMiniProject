@@ -36,7 +36,7 @@ func (u userRepository) DeleteUser(req string) error {
 func (u userRepository) GetAllUser() ([]entity.User, error) {
 	var users []entity.User
 	result := u.db.Find(&users)
-	if result != nil {
+	if result.Error != nil {
 		return nil, result.Error
 	}
 
