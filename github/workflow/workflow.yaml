@@ -1,0 +1,26 @@
+permissions:
+  contents: read
+  packages: write
+
+name: Deploy App
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v20260306)'
+        required: true
+        default: 'v20260306'
+
+jobs:
+
+  Build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Image
+        run: |
+          docker build -t ghcr.io/thanutgit/DevOpsMiniProject:${{ github.event.inputs.tag }} .
