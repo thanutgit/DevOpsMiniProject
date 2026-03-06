@@ -24,4 +24,5 @@ jobs:
       - name : test
         run : |
           set -e
-          ls
+          cd k8s
+          kubectl apply -f app.yaml
