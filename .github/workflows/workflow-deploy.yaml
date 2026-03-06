@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name : test
+      - name : Deploy to K3s
         run : |
           set -e
           cd k8s
