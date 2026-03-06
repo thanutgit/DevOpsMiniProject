@@ -16,5 +16,6 @@ func (u userService) HandleGetAllUser(c fiber.Ctx) error {
 	for _, user := range users {
 		result += fmt.Sprintf("Username : %s | Name : %s | Age : %d\n", user.Username, user.Name, user.Age)
 	}
+	
 	return c.SendString(result)
 }
