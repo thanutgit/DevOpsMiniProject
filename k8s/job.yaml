@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-project 
+---
+apiVersion: batch/v1
+Kind: Job
+metadata:
+  name: devops-project
+  namespace: devops-project
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 1200
+  activeDeadlineSeconds: 1200
+  template:
+    spec:
+      containers:
+        - name: migrate
+          image: ghcr.io/thanutgit/devopsminiproject:v2026.03.06-3
+          env:
+            - name: APP_SERVICE
+              value: "migrator"
+          envFrom:
+            - secretRef:
+                name: devops-project-secret
+            - configMapRef:
+                name: devops-project-config-map
+      restartPolicy: Never
+
