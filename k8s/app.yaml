@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-project 
+---
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name : app-api
+  namespace : devops-project 
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: devops-project
+  template:
+    metadata:
+      lebels:
+        app: devops-project
+    spec:
+      container:
+        - name: app
+          image: ghcr.io/thanutgit/devopsminiproject:v20260306
+          ports:
+            - containerPort: 3010
+          env:
+            - name: APP_SERVICE
+              value: "server"
+          envForm:
+            - secretRef:
+                name: devops-project-secret
+            - configMapRef:
+                name: devops-project-config-map
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
