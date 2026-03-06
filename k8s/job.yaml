@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: migrate
-          image: ghcr.io/thanutgit/devopsminiproject:v2026.03.06-4
+          image: ghcr.io/thanutgit/devopsminiproject:v2026.03.06-5
           env:
             - name: APP_SERVICE
               value: "migrator"
