@@ -30,4 +30,4 @@ jobs:
 
       - name: Push image
         run: |
-          docker push ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }} .
+          docker push ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }}
