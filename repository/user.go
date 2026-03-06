@@ -9,6 +9,7 @@ import (
 type UserRepository interface {
 	CreateUser(ent entity.User) (entity.User, error)
 	DeleteUser(req string) error
+	GetAllUser() ([]entity.User, error)
 }
 
 type userRepository struct {
@@ -30,6 +31,16 @@ func (u userRepository) DeleteUser(req string) error {
 	}
 
 	return nil
+}
+
+func (u userRepository) GetAllUser() ([]entity.User, error) {
+	var users []entity.User
+	result := u.db.Find(&users)
+	if result != nil {
+		return nil, result.Error
+	}
+
+	return users, nil
 }
 
 func ProvideUserRepository(db *gorm.DB) UserRepository {

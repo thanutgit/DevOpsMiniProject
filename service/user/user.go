@@ -10,6 +10,7 @@ import (
 type UserService interface {
 	HandleCreateUser(c fiber.Ctx) error
 	HandleDeleteUser(c fiber.Ctx) error
+	HandleGetAllUser(c fiber.Ctx) error
 }
 
 type userService struct {

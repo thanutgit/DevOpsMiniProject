@@ -5,6 +5,8 @@ import (
 	"os"
 	"sync/atomic"
 	"time"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 type statusHome struct {
@@ -23,7 +25,7 @@ type statusHome struct {
 }
 
 type StatusHome interface {
-	GetAllInfo() (statusHome, error)
+	GetAllInfo(c fiber.Ctx) error
 }
 
 var (
@@ -51,7 +53,7 @@ func GetTotalRequests() uint64 {
 	return atomic.LoadUint64(&totalRequests)
 }
 
-func (s statusHome) GetAllInfo() (statusHome, error) {
+func (s statusHome) GetAllInfo(c fiber.Ctx) error {
 	IncrementRequest()
 	env := os.Getenv("APP_ENV")
 	s.Environment = env
@@ -67,7 +69,34 @@ func (s statusHome) GetAllInfo() (statusHome, error) {
 	s.StartTime = "2026-03-03T10:15:00Z"
 	s.ProcessID = os.Getpid()
 
-	return s, nil
+	output := fmt.Sprintf(`
+	Mini Production Platform
+	=========================
+
+	Runtime Overview
+	-------------------------
+	Status: %s
+	Environment: %s
+	Version: %s
+	Build Time: %s 
+
+	Pod Information
+	-------------------------
+	Hostname (Pod): %s
+	Process ID: %d
+	Start Time: %s
+	Current Time: %s
+	Uptime: %s
+	Total Requests: %d
+
+	Dependencies
+	-------------------------
+	Database Status: %s
+	Redis Status: %s
+	`, s.Status, s.Environment, s.Version, s.BuildTime, s.Hostname, s.ProcessID,
+		s.StartTime, s.CurrentTime, s.Uptime, s.TotalRequests, s.DatabaseStatus, s.RedisStatus)
+
+	return c.SendString(output)
 }
 
-func ProvideStatusService() *statusHome { return &statusHome{} }
+func ProvideHomeService() *statusHome { return &statusHome{} }
