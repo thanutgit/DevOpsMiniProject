@@ -15,10 +15,10 @@ spec:
       app: devops-project
   template:
     metadata:
-      lebels:
+      labels:
         app: devops-project
     spec:
-      container:
+      containers:
         - name: app
           image: ghcr.io/thanutgit/devopsminiproject:v2026.03.06
           ports:
