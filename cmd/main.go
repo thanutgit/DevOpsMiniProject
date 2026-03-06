@@ -30,5 +30,5 @@ func main() {
 		}
 	}
 
-	log.Fatal("err")
+	log.Fatal("ไม่เข้าเงื่อนไข")
 }
