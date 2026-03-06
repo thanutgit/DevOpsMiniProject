@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: ghcr.io/thanutgit/devopsminiproject:v2026.03.06-1
+          image: ghcr.io/thanutgit/devopsminiproject:v2026.03.06-2
           ports:
             - containerPort: 3010
           env:
