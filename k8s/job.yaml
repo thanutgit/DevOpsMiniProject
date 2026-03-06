@@ -4,7 +4,7 @@ metadata:
   name: devops-project 
 ---
 apiVersion: batch/v1
-Kind: Job
+kind: Job
 metadata:
   name: devops-project-job
   namespace: devops-project
