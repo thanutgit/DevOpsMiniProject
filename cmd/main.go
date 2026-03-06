@@ -4,6 +4,7 @@ import (
 	"DevOpsMiniProject/di/config"
 	"DevOpsMiniProject/di/database"
 	"DevOpsMiniProject/di/server"
+	"log"
 )
 
 func main() {
@@ -12,6 +13,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	log.Fatal("kuy")
 
 	if cfg.Server.Service == "server" {
 		err := server.InitApiServer(db)
