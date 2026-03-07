@@ -18,6 +18,10 @@ spec:
           image: grafana/grafana:latest
           ports:
             - containerPort: 3000
+      volumes:
+        - name: grafana-data
+          persistanceVolumeClaim:
+            claimName: grafana-pvc
 ---
 apiVersion : v1
 kind: Service

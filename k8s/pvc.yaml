@@ -1,0 +1,11 @@
+apiVerrsion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOne
+  resources:
+    request:
+      storage: 1Gi
