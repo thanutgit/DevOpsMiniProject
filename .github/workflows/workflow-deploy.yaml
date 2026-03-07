@@ -38,5 +38,5 @@ jobs:
           kubectl apply -f prometheus-configmap.yaml
           kubectl apply -f prometheus.yaml
           kubectl rollout status deployment/prometheus -n monitoring --timeout=10m 
-
+          kubectl apply -f grafana.yaml
 
