@@ -16,4 +16,4 @@ data:
     scrape_configs:
       - job_name: 'app-api'
         static_configs:
-          - targets: ['app-service.devops-project.svc.cluster.local:3010']
+          - targets: ['app-service.devops-project.svc.cluster.local:3020']
