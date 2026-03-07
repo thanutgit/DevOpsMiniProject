@@ -24,6 +24,13 @@ jobs:
       - name: Login to GHCR
         run: echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
+      - name: Check if tag exists
+        run: |
+          if docker manifest inspect ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }} > /dev/null 2>&1; then
+            echo "❌ Image tag ${{ github.event.inputs.tag }} already exists!"
+            exit 1
+          fi
+
       - name: Build Image
         run: |
           docker build -t ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }} .
