@@ -34,3 +34,9 @@ jobs:
           kubectl apply -f job.yaml
           kubectl -n devops-project wait --for=condition=complete job/devops-project-job --timeout=30m
           kubectl apply -f app.yaml
+          kubectl rollout status deployment/app-api -n devops-project --timeout=30m
+          kubectl apply -f prometheus-configmap.yaml
+          kubectl apply -f prometheus-deployment.yaml
+          kubectl rollout status deployment/prometheus -n monitoring --timeout=10m 
+
+
