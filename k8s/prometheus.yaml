@@ -26,3 +26,16 @@ spec:
         - name: config
           configMap:
             name: prometheus-config
+---
+apiVersion : v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: monitoring
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - port: 3030
+      targetPort: 9090
+  type: ClusterIP
