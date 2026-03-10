@@ -27,7 +27,7 @@ spec:
             claimName: grafana-pvc
 ---
 apiVersion : v1
-kind: Service
+kind: Serviceห
 metadata:
   name: grafana-service
   namespace: monitoring
