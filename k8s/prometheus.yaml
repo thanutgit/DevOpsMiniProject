@@ -50,7 +50,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: promethueus
+  name: prometheus
 rules:
   - apiGroups: [""]
     resources: ["nodes", "pods", "services", "endpoints"]
