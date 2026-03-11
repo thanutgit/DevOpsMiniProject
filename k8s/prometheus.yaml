@@ -53,7 +53,7 @@ metadata:
   name: prometheus
 rules:
   - apiGroups: [""]
-    resources: ["nodes", "pods", "services", "endpoints"]
+    resources: ["nodes", "nodes/metrics", "pods", "services", "endpoints"]
     verbs: ["get", "list", "watch"]
   - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
     verbs: ["get"]
