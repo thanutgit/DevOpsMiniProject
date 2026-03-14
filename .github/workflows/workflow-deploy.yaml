@@ -60,8 +60,8 @@ jobs:
           # kubectl rollout status deployment/prometheus -n monitoring --timeout=10m
           # kubectl apply -f pvc.yaml
           # kubectl apply -f grafana.yaml
-          kubectl delete -f k8s/prometheus.yaml
-          kubectl delete -f k8s/prometheus-configmap.yaml
-          kubectl delete -f k8s/grafana.yaml
-          kubectl delete -f k8s/pvc.yaml
+          kubectl delete -f prometheus.yaml
+          kubectl delete -f prometheus-configmap.yaml
+          kubectl delete -f grafana.yaml
+          kubectl delete -f pvc.yaml
 
