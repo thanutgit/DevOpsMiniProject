@@ -24,10 +24,6 @@ type statusHome struct {
 	ProcessID      int
 }
 
-type StatusHome interface {
-	GetAllInfo(c fiber.Ctx) error
-}
-
 var (
 	startTime     = time.Now()
 	totalRequests uint64

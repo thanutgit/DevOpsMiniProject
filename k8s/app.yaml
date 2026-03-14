@@ -12,16 +12,26 @@ spec:
     metadata:
       labels:
         app: devops-project
-      annotations:              
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "3010"
-        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: app
           image: ghcr.io/thanutgit/devopsminiproject:VERSION
           ports:
             - containerPort: 3010
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3010
+            intialDelaySeconds: 10
+            periodSeconds:  15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3010
+            intialDelaySeconds: 5
+            periodSeconds:  10
+            failureThreshold: 3
           env:
             - name: APP_SERVICE
               value: "server"

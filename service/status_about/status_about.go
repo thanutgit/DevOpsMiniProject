@@ -21,10 +21,6 @@ type statusAbout struct {
 	Namespace   string
 }
 
-type StatusAbout interface {
-	GetAllInfo() (statusAbout, error)
-}
-
 func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 	env := os.Getenv("APP_ENV")
 	s.ServiceName = "go-api"
