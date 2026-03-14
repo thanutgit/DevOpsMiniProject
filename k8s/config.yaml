@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devops-project-config-map
+  namespace: devops-project
+data:
+  APP_PORT: "3010"
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: devops-project-secret
+  namespace: devops-project
+type: Opaque
+stringData:          # ← ใช้ stringData ไม่ต้อง base64 เอง
+  DB_HOST: "devopsproject-thanutsukprasertsomm-4275.a.aivencloud.com"
+  DB_NAME: "devops_project"
+  DB_PASSWORD: "AVNS_8rMXPjbzz01WDaNiufN"
+  DB_PORT: "16624"
+  DB_USER: "avnadmin"
