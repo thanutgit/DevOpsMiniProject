@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devops-project-config-map
+  namespace: devops-project
+data:
+  APP_PORT: "3010"

@@ -26,11 +26,28 @@ jobs:
           sed -i 's|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }}|' k8s/job.yaml
           sed -i 's|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }}|' k8s/app.yaml
 
+      - name: Create secret
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: devops-project-secret
+            namespace: devops-project
+          type: Opaque
+          stringData:
+            DB_HOST: "${{ secrets.DB_HOST }}"
+            DB_NAME: "${{ secrets.DB_NAME }}"
+            DB_PASSWORD: "${{ secrets.DB_PASSWORD }}"
+            DB_PORT: "${{ secrets.DB_PORT }}"
+            DB_USER: "${{ secrets.DB_USER }}"
+          EOF
+
       - name : Deploy to K3s
         run : |
           set -e
           cd k8s
-          kubectl apply -f config.yaml
+          kubectl apply -f configmap.yaml
           kubectl delete job devops-project-job -n devops-project --ignore-not-found
           kubectl apply -f job.yaml
           kubectl -n devops-project wait --for=condition=complete job/devops-project-job --timeout=30m
