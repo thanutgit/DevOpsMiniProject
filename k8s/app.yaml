@@ -4,7 +4,6 @@ metadata:
   name : app-api
   namespace : devops-project 
 spec:
-  replicas: 3
   selector:
     matchLabels:
       app: devops-project
