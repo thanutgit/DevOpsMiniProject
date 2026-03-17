@@ -9,7 +9,7 @@ COPY . .
 ARG VERSION
 ARG BUILD_TIME
 RUN go build \
-    -ldflags "-X DevOpsMiniProject/util.Version=${VERSION} -X DevOpsMiniProject/util.BuildTime=${BUILD_TIME}" \
+    -ldflags "-X DevOpsMiniProject/util.Version=${VERSION} -X DevOpsMiniProject/util.buildTime=${BUILD_TIME}" \
     -o /app/main ./cmd
 
 EXPOSE 3010

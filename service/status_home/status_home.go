@@ -3,7 +3,6 @@ package service_status_home
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"DevOpsMiniProject/util"
 
@@ -39,12 +38,12 @@ func (s statusHome) GetAllInfo(c fiber.Ctx) error {
 	status := "Running"
 	version := util.Version
 	hostname, _ := os.Hostname()
-	uptime := time.Since(util.StartTime).String()
+	uptime := util.Uptime()
 	totalRequests := int64(util.GetTotalRequests())
 	dbStatus := s.userRepository.GetStatusDB()
 	redisStatus := "🟡Not Configured"
-	buildTime := util.BuildTime
-	startTime := util.StartTime
+	buildTime := util.Buildtime()
+	startTime := util.StartTime()
 	processID := os.Getpid()
 
 	output := fmt.Sprintf(`
