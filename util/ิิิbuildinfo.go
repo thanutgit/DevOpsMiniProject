@@ -33,7 +33,7 @@ func Uptime() string {
 	h := int(duration.Hours())
 	m := int(duration.Minutes()) % 60
 	s2 := int(duration.Seconds()) % 60
-	return fmt.Sprint("%dh %dm %ds", h, m, s2)
+	return fmt.Sprintf("%dh %dm %ds", h, m, s2)
 }
 
 func IncrementRequest() {
