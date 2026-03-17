@@ -10,6 +10,7 @@ type UserRepository interface {
 	CreateUser(ent entity.User) (entity.User, error)
 	DeleteUser(req string) error
 	GetAllUser() ([]entity.User, error)
+	GetStatusDB() string
 }
 
 type userRepository struct {
@@ -41,6 +42,15 @@ func (u userRepository) GetAllUser() ([]entity.User, error) {
 	}
 
 	return users, nil
+}
+
+func (u userRepository) GetStatusDB() string {
+	sqlDB, err := u.db.DB()
+	if err != nil || sqlDB.Ping() != nil {
+		return "🔴disconnected"
+	} else {
+		return "🟢connect"
+	}
 }
 
 func ProvideUserRepository(db *gorm.DB) UserRepository {
