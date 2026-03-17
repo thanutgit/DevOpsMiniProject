@@ -13,7 +13,7 @@ import (
 func InitRouter(server *fiber.App, db *gorm.DB) {
 	userService := user_service.ProvideUserService(db)
 	aboutService := service_status_about.ProvideStatusAbout()
-	homeService := service_status_home.ProvideHomeService()
+	homeService := service_status_home.ProvideHomeService(db)
 	healthzService := service_healthz.ProvideHealthzService(db)
 
 	server.Post("/user", userService.HandleCreateUser)
