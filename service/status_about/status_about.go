@@ -77,7 +77,7 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 
 	Available Endpoints
 	-------------------------
-%s
+	%s
 	=========================
 	`, serviceName, description, owner, repository, version,
 		commitSHA, buildTime, goVersion, environment, clusterInfo, namespace, endPoints.String())
