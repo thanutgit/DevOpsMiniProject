@@ -5,3 +5,4 @@ metadata:
   namespace: devops-project
 data:
   APP_PORT: "3010"
+  APP_ENV: "production" 
