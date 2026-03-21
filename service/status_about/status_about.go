@@ -30,6 +30,9 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 	routes := c.App().GetRoutes()
 	var endPoints strings.Builder
 	for _, route := range routes {
+		if route.Method == "HEAD" {
+			continue
+		}
 		key := fmt.Sprintf("%s %s", route.Method, route.Path)
 		desc := routeDescriptions[key]
 		endPoints.WriteString(fmt.Sprintf("\t%s %s - %s\n", route.Method, route.Path, desc))
