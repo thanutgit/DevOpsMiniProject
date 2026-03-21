@@ -1,39 +1,52 @@
 package service_status_about
 
 import (
+	"DevOpsMiniProject/util"
 	"fmt"
 	"os"
+	"runtime"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 )
 
-type statusAbout struct {
-	ServiceName string
-	Description string
-	Owner       string
-	Repository  string
-	Version     string
-	CommitSHA   string
-	BuildTime   string
-	GoVersion   string
-	Environment string
-	ClusterInfo string
-	Namespace   string
+type StatusAbout interface {
+	GetAllInfo(c fiber.Ctx) error
+}
+
+type statusAbout struct{}
+
+var routeDescriptions = map[string]string{
+	"GET /":        "Runtime overview and status",
+	"GET /about":   "Service information and metadata",
+	"GET /user":    "Get all users",
+	"POST /user":   "Create user",
+	"DELETE /user": "Delete user",
+	"GET /healthz": "Health check",
 }
 
 func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
+	//loop route
+	routes := c.App().GetRoutes()
+	var endPoints strings.Builder
+	for _, route := range routes {
+		key := fmt.Sprintf("%s %s", route.Method, route.Path)
+		desc := routeDescriptions[key]
+		endPoints.WriteString(fmt.Sprintf("\t%s %s - %s\n", route.Method, route.Path, desc))
+	}
+
 	env := os.Getenv("APP_ENV")
-	s.ServiceName = "go-api"
-	s.Description = "A simple Go API for DevOps mini project"
-	s.Owner = "Thanusu"
-	s.Repository = "https://github.com/thanuth/go-api"
-	s.Version = "v.1.0.0"
-	s.CommitSHA = "abc123def456"
-	s.BuildTime = "2024-06-01T12:00:00Z"
-	s.GoVersion = "go1.20"
-	s.Environment = env
-	s.ClusterInfo = "local-cluster"
-	s.Namespace = "default"
+	serviceName := "Mini_Devops_Project"
+	description := "A simple Go API for DevOps mini project"
+	owner := "Thanut"
+	repository := "https://github.com/thanutgit/DevOpsMiniProject"
+	version := util.Version
+	commitSHA := util.CommitSHA
+	buildTime := util.Buildtime()
+	goVersion := runtime.Version()
+	environment := env
+	clusterInfo := "k3s-local"
+	namespace := os.Getenv("POD_NAMESPACE")
 
 	output := fmt.Sprintf(`
 	Mini Production Platform
@@ -61,14 +74,13 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 
 	Available Endpoints
 	-------------------------
-	GET /home - Runtime overview and status
-	GET /about - Service information and metadata
+	%s
 
 	=========================
-	`, s.ServiceName, s.Description, s.Owner, s.Repository, s.Version,
-		s.CommitSHA, s.BuildTime, s.GoVersion, s.Environment, s.ClusterInfo, s.Namespace)
+	`, serviceName, description, owner, repository, version,
+		commitSHA, buildTime, goVersion, environment, clusterInfo, namespace, endPoints.String())
 
 	return c.SendString(output)
 }
 
-func ProvideStatusAbout() *statusAbout { return &statusAbout{} }
+func ProvideStatusAbout() StatusAbout { return &statusAbout{} }

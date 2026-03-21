@@ -17,18 +17,7 @@ type StatusHome interface {
 }
 
 type statusHome struct {
-	Status         string
-	Version        string
-	Environment    string
-	Hostname       string
-	Uptime         string
-	TotalRequests  int64
 	db             *gorm.DB
-	RedisStatus    string
-	BuildTime      string
-	CurrentTime    string
-	StartTime      string
-	ProcessID      int
 	userRepository repository.UserRepository
 }
 

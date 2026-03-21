@@ -13,6 +13,7 @@ var (
 	buildTime     string
 	startTime     = time.Now()
 	totalRequests uint64
+	CommitSHA     string
 )
 
 func Buildtime() string {
