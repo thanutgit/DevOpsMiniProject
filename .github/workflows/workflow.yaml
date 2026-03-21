@@ -33,9 +33,12 @@ jobs:
 
       - name: Build Image
         run: |
+          COMMIT_SHA=${{ github.sha }}
+          echo "COMMIT_SHA: $COMMIT_SHA"
           docker build \
           --build-arg VERSION=${{ github.event.inputs.tag }} \
           --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+          --build-arg COMMIT_SHA=${{ github.sha }} \
           -t ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }} .
 
       - name: Push image

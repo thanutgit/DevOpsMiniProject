@@ -35,7 +35,7 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 		}
 		key := fmt.Sprintf("%s %s", route.Method, route.Path)
 		desc := routeDescriptions[key]
-		endPoints.WriteString(fmt.Sprintf("\t%s %s - %s\n", route.Method, route.Path, desc))
+		endPoints.WriteString(fmt.Sprintf("%s %s - %s\n", route.Method, route.Path, desc))
 	}
 
 	env := os.Getenv("APP_ENV")
@@ -77,8 +77,7 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 
 	Available Endpoints
 	-------------------------
-	%s
-
+%s
 	=========================
 	`, serviceName, description, owner, repository, version,
 		commitSHA, buildTime, goVersion, environment, clusterInfo, namespace, endPoints.String())
