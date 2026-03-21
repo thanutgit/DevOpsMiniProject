@@ -8,6 +8,7 @@ RUN go mod download
 COPY . .
 ARG VERSION
 ARG BUILD_TIME
+ARG COMMIT_SHA
 RUN go build \
     -ldflags "-X DevOpsMiniProject/util.Version=${VERSION} -X DevOpsMiniProject/util.buildTime=${BUILD_TIME} -X DevOpsMiniProject/util.CommitSHA=${COMMIT_SHA}" \
     -o /app/main ./cmd
