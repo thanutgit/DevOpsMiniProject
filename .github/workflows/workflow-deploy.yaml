@@ -23,7 +23,7 @@ jobs:
 
   Deploy:
     if: github.ref == 'refs/heads/main'
-    runs-on: ${{ github.event.inputs.environment == 'dev' && 'thanut-VirtualBox' || 'vps-production' }}
+    runs-on: ${{ github.event.inputs.environment == 'dev' && 'VirtualBox' || 'VPS' }}
 
     steps:
       - uses: actions/checkout@v4
