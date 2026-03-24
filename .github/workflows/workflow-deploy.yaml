@@ -11,20 +11,27 @@ on:
         description: 'Version tag (e.g. v2026.03.06)'
         required: true
         default: ''
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        options: 
+          - dev
+          - prd
 
 jobs:
 
   Deploy:
     if: github.ref == 'refs/heads/main'
-    runs-on: self-hosted
+    runs-on: ${{ github.event.inputs.environment == 'dev' && 'thanut-VirtualBox' || 'vps-production' }}
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Update image tag
         run: |
-          sed -i 's|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }}|' k8s/job.yaml
-          sed -i 's|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ghcr.io/thanutgit/devopsminiproject:${{ github.event.inputs.tag }}|' k8s/app.yaml
+          sed -i 's|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ghcr.io/thanutgit/devopsminiproject-${{ github.event.inputs.environment }}:${{ github.event.inputs.tag }}|' k8s/job.yaml
+          sed -i 's|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ghcr.io/thanutgit/devopsminiproject-${{ github.event.inputs.environment }}:${{ github.event.inputs.tag }}|' k8s/app.yaml
 
       - name: Create secret
         run: |
