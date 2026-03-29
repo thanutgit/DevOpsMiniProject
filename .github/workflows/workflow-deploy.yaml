@@ -55,3 +55,4 @@ jobs:
           kubectl rollout restart deployment/app-api -n devops-project
           kubectl rollout status deployment/app-api -n devops-project --timeout=30m
           kubectl apply -f hpa.yaml
+          kubectl apply -f ingress.yaml
