@@ -6,3 +6,7 @@ type User struct {
 	Name     string `json:"name" gorm:"type:varchar(255)"`
 	Age      int    `json:"age" gorm:"type:int"`
 }
+
+func (User) TableName() string {
+	return "users"
+}

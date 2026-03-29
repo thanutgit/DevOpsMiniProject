@@ -2,6 +2,7 @@ package repository
 
 import (
 	"DevOpsMiniProject/entity"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -40,7 +41,7 @@ func (u userRepository) GetAllUser() ([]entity.User, error) {
 	if result.Error != nil {
 		return nil, result.Error
 	}
-
+	fmt.Println("Row found:", result.RowsAffected) // เพิ่มบรรทัดนี้
 	return users, nil
 }
 
