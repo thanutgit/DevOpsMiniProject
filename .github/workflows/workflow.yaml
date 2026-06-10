@@ -15,7 +15,7 @@ on:
         description: 'Environment'
         required: true
         type: choice
-        options: 
+        options:
           - dev
           - prd
 
@@ -25,29 +25,44 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
-    steps:  
+    env:
+      IMAGE: ghcr.io/thanutgit/devopsminiproject-${{ github.event.inputs.environment }}:${{ github.event.inputs.tag }}
+
+    steps:
       - uses: actions/checkout@v4
 
-      - name: Login to GHCR
-        run: echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
 
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # กันไม่ให้ทับ tag เดิม (เดิมคุณมีอยู่แล้ว เก็บไว้)
       - name: Check if tag exists
         run: |
-          if docker manifest inspect ghcr.io/thanutgit/devopsminiproject-${{ github.event.inputs.environment }}:${{ github.event.inputs.tag }} > /dev/null 2>&1; then
-            echo "❌ Image tag ${{ github.event.inputs.tag }} already exists!"
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image tag ${{ github.event.inputs.tag }} already exists!"
             exit 1
           fi
 
-      - name: Build Image
-        run: |
-          COMMIT_SHA=${{ github.sha }}
-          echo "COMMIT_SHA: $COMMIT_SHA"
-          docker build \
-          --build-arg VERSION=${{ github.event.inputs.tag }} \
-          --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-          --build-arg COMMIT_SHA=${{ github.sha }} \
-          -t ghcr.io/thanutgit/devopsminiproject-${{ github.event.inputs.environment }}:${{ github.event.inputs.tag }} .
+      # คำนวณเวลา build ส่งให้ Dockerfile ผ่าน build-arg
+      - name: Set build time
+        id: meta
+        run: echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Push image
-        run: |
-          docker push ghcr.io/thanutgit/devopsminiproject-${{ github.event.inputs.environment }}:${{ github.event.inputs.tag }}
+      # build + push รวมในขั้นตอนเดียว ผ่าน buildkit (เสถียร ไม่เจอ unknown blob)
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          provenance: false
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            VERSION=${{ github.event.inputs.tag }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+            COMMIT_SHA=${{ github.sha }}
