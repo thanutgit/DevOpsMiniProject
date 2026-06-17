@@ -23,6 +23,7 @@ var routeDescriptions = map[string]string{
 	"POST /user":   "Create user",
 	"DELETE /user": "Delete user",
 	"GET /healthz": "Health check",
+	"GET /Grafana": "Grafana dashboard",
 }
 
 func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
