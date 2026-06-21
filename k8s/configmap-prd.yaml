@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devops-project-config-map
+  namespace: devops-project
+data:
+  APP_PORT: "3010"
+  APP_ENV: "production"
+  CLUSTER_NAME: "k3s-prd"

@@ -48,7 +48,7 @@ jobs:
             --from-literal=DB_PORT="${{ secrets.DB_PORT }}" \
             --from-literal=DB_USER="${{ secrets.DB_USER }}" \
             --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f configmap.yaml
+          kubectl apply -f configmap-${{ github.event.inputs.environment }}.yaml
           kubectl delete job devops-project-job -n devops-project --ignore-not-found
           kubectl apply -f job.yaml
           kubectl -n devops-project wait --for=condition=complete job/devops-project-job --timeout=30m 

@@ -5,4 +5,5 @@ metadata:
   namespace: devops-project
 data:
   APP_PORT: "3010"
-  APP_ENV: "production" 
+  APP_ENV: "development"
+  CLUSTER_NAME: "k3s-dev"
