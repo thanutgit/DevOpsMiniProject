@@ -35,7 +35,10 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 			continue
 		}
 		key := fmt.Sprintf("%s %s", route.Method, route.Path)
-		desc := routeDescriptions[key]
+		desc, ok := routeDescriptions[key]
+		if !ok {
+			continue // ← ข้าม route ที่เราไม่ได้ตั้งใจโชว์
+		}
 		endPoints.WriteString(fmt.Sprintf("\t%s %s - %s\n", route.Method, route.Path, desc))
 	}
 
