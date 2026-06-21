@@ -19,14 +19,14 @@ spec:
             - containerPort: 3010
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: 3010
             initialDelaySeconds: 10
             periodSeconds:  15
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 3010
             initialDelaySeconds: 5
             periodSeconds:  10
