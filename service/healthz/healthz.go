@@ -7,6 +7,7 @@ import (
 
 type HealthzService interface {
 	HandleHealthCheck(c fiber.Ctx) error
+	HandleLiveCheck(c fiber.Ctx) error
 }
 
 type healthzService struct {
@@ -30,6 +31,10 @@ func (h *healthzService) HandleHealthCheck(c fiber.Ctx) error {
 			},
 		})
 	}
+}
+
+func (h *healthzService) HandleLiveCheck(c fiber.Ctx) error {
+	return c.Status(200).JSON(fiber.Map{"status": "alive"})
 }
 
 func ProvideHealthzService(db *gorm.DB) HealthzService {
