@@ -23,5 +23,7 @@ func InitRouter(server *fiber.App, db *gorm.DB) {
 	server.Get("/about", aboutService.GetAllInfo)
 	server.Get("/", homeService.GetAllInfo)
 
-	server.Get("/healthz", healthzService.HandleHealthCheck)
+	server.Get("/healthz", healthzService.HandleHealthCheck) //readiness เดิม (เช็ค DB)
+	server.Get("/livez", healthzService.HandleLiveCheck)     // liveness: ไม่เช็ค DB
+	server.Get("/readyz", healthzService.HandleHealthCheck)  // readiness: เช็ค DB
 }

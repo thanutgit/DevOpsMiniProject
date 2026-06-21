@@ -49,7 +49,10 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 	buildTime := util.Buildtime()
 	goVersion := runtime.Version()
 	environment := env
-	clusterInfo := "k3s-local"
+	clusterInfo := os.Getenv("CLUSTER_NAME")
+	if clusterInfo == "" {
+		clusterInfo = "unknown"
+	}
 	namespace := os.Getenv("POD_NAMESPACE")
 
 	output := fmt.Sprintf(`
