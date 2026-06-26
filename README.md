@@ -181,7 +181,7 @@ flowchart LR
 
 ---
 
-## ปัญหาที่เจอและวิธีแก้ (Challenges & Solutions)
+<!-- ## ปัญหาที่เจอและวิธีแก้ (Challenges & Solutions)
 
 ตัวอย่างปัญหาจริงที่แก้ระหว่างทำโปรเจค:
 
@@ -198,7 +198,7 @@ flowchart LR
 - **การออกแบบ liveness/readiness** — แยก probe เพื่อให้ DB หลุดชั่วคราวกระทบแค่
   readiness (หยุดรับ traffic) แทนที่จะ kill pod ที่ยังดีอยู่
 
----
+--- -->
 
 ## สิ่งที่จะพัฒนาต่อ (Future Improvements)
 
