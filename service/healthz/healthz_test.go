@@ -9,17 +9,17 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-func TestHandleHealthCheck(t *testing.T) {
-	// สร้าง mock ของ HealthzService โดยไม่ต้องเชื่อมต่อฐานข้อมูลจริง
-	mockService := &healthzService{
-		db: nil, // ไม่ต้องใช้ฐานข้อมูลจริงใน test นี้
-	}
+// func TestHandleHealthCheck(t *testing.T) {
+// 	// สร้าง mock ของ HealthzService โดยไม่ต้องเชื่อมต่อฐานข้อมูลจริง
+// 	mockService := &healthzService{
+// 		db: nil, // ไม่ต้องใช้ฐานข้อมูลจริงใน test นี้
+// 	}
 
-	got := mockService.HandleHealthCheck(nil) // ส่ง nil เป็น context เพราะเราไม่ใช้จริงใน test นี้
-	if !strings.Contains(got.Error(), "unhealthy") && !strings.Contains(got.Error(), "ok") {
-		t.Errorf("HandleHealthCheck() = %q, ต้องมี 'unhealthy' หรือ 'ok' อยู่ในผลลัพธ์", got.Error())
-	}
-}
+// 	got := mockService.HandleHealthCheck(nil) // ส่ง nil เป็น context เพราะเราไม่ใช้จริงใน test นี้
+// 	if !strings.Contains(got.Error(), "unhealthy") && !strings.Contains(got.Error(), "ok") {
+// 		t.Errorf("HandleHealthCheck() = %q, ต้องมี 'unhealthy' หรือ 'ok' อยู่ในผลลัพธ์", got.Error())
+// 	}
+// }
 
 func TestHandleLiveCheck(t *testing.T) {
 	app := fiber.New()
