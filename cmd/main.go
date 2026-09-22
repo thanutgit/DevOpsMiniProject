@@ -5,6 +5,7 @@ import (
 	"DevOpsMiniProject/di/database"
 	"DevOpsMiniProject/di/server"
 	"log"
+	_ "time/tzdata"
 )
 
 func main() {

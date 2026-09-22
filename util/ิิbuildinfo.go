@@ -4,9 +4,18 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
+	_ "time/tzdata"
 )
 
-var loc, _ = time.LoadLocation("Asia/Bangkok")
+var loc = loadLocation()
+
+func loadLocation() *time.Location {
+	l, err := time.LoadLocation("Asia/Bangkok")
+	if err != nil {
+		return time.FixedZone("ICT", 7*60*60)
+	}
+	return l
+}
 
 var (
 	Version       string
