@@ -1,0 +1,32 @@
+# ClusterIssuer = บอก cert-manager ว่าจะขอ cert จากที่ไหน ด้วยวิธีไหน
+# staging: ทดสอบ flow (browser ไม่เชื่อถือ แต่ rate limit สูง)
+# prod:    cert จริง (rate limit ต่ำ ใช้หลังจาก staging ผ่านแล้ว)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: thanutsukprasertsomm@hotmail.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: thanutsukprasertsomm@hotmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
