@@ -12,6 +12,10 @@ spec:
       labels:
         app: devops-project
     spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: app
           image: ghcr.io/thanutgit/devopsminiproject:VERSION

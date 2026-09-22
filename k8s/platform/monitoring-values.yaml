@@ -1,0 +1,4 @@
+grafana:
+  env:
+    GF_SERVER_ROOT_URL: https://45.150.128.180.nip.io/grafana
+    GF_SERVER_SERVE_FROM_SUB_PATH: true

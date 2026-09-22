@@ -9,6 +9,10 @@ spec:
   activeDeadlineSeconds: 1200
   template:
     spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: migrate
           image: ghcr.io/thanutgit/devopsminiproject:VERSION
