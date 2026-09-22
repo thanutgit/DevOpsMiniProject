@@ -6,7 +6,7 @@ metadata:
   name: app-ingress
   namespace: devops-project
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prd
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: traefik
   tls:
@@ -31,7 +31,7 @@ metadata:
   name: grafana-ingress
   namespace: monitoring
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prd
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: traefik
   tls:
