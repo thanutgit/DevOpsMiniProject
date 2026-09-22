@@ -1,0 +1,51 @@
+# Prd (VPS, public IP) — HTTPS ด้วย cert-manager + Let's Encrypt
+# เริ่มด้วย letsencrypt-staging ก่อน ผ่านแล้วค่อยเปลี่ยนเป็น letsencrypt-prod
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: devops-project
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - 45.150.128.180.nip.io
+      secretName: app-tls
+  rules:
+    - host: 45.150.128.180.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-service
+                port:
+                  number: 3020
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: monitoring
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - 45.150.128.180.nip.io
+      secretName: grafana-tls
+  rules:
+    - host: 45.150.128.180.nip.io
+      http:
+        paths:
+          - path: /grafana
+            pathType: Prefix
+            backend:
+              service:
+                name: monitoring-grafana
+                port:
+                  number: 80
