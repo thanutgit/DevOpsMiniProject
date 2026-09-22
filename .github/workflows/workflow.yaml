@@ -22,7 +22,10 @@ on:
 jobs:
 
   Build:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event.inputs.environment == 'dev' &&
+      (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')) ||
+      (github.event.inputs.environment == 'prd' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
 
     env:
