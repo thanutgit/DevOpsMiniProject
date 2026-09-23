@@ -26,7 +26,7 @@ metadata:
   name: app-ingress
   namespace: devops-project
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.middlewares: devops-project-redirect-to-https@kubernetescrd
 spec:
   ingressClassName: traefik
