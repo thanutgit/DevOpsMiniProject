@@ -1,5 +1,25 @@
 # Prd (VPS, public IP) — HTTPS ด้วย cert-manager + Let's Encrypt
 # เริ่มด้วย letsencrypt-staging ก่อน ผ่านแล้วค่อยเปลี่ยนเป็น letsencrypt-prod
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: devops-project
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: monitoring
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,6 +27,7 @@ metadata:
   namespace: devops-project
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: devops-project-redirect-to-https@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:
@@ -32,6 +53,7 @@ metadata:
   namespace: monitoring
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-to-https@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:
