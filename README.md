@@ -44,6 +44,7 @@ variable:
 ```mermaid
 flowchart TD
     User([User / Browser]) -->|HTTPS :443| Traefik[Traefik Ingress]
+    User -.->|HTTP :80 ถูก redirect 308| Traefik
     LE[Let's Encrypt] -.HTTP-01 challenge.-> Traefik
     CM[cert-manager] -.ขอ/ต่ออายุ TLS cert.-> LE
     CM -.TLS secret.-> Traefik
@@ -117,6 +118,7 @@ flowchart LR
     พร้อมให้บริการจริง
 - **HTTPS อัตโนมัติ** — cert-manager ขอและต่ออายุ certificate จาก Let's Encrypt
   ทดสอบกับ staging issuer ก่อนเปลี่ยนเป็น production เพื่อเลี่ยง rate limit
+  และ redirect HTTP → HTTPS ทุก request ด้วย Traefik Middleware
 - **Horizontal Pod Autoscaler** — scale `app-api` จาก 3 ถึง 6 replicas ที่ CPU
   85% (ทดสอบด้วย k6)
 - **Unit tests แบบ table-driven** รันใน CI ก่อน merge ทุกครั้ง
@@ -173,7 +175,7 @@ flowchart LR
 │   ├── job.yaml              # DB migration Job
 │   ├── hpa.yaml              # HorizontalPodAutoscaler
 │   ├── ingress-dev.yaml      # HTTP
-│   └── ingress-prd.yaml      # HTTPS + cert-manager
+│   └── ingress-prd.yaml      # HTTPS + cert-manager + redirect middleware
 ├── .github/workflows/        # CI, build, deploy pipelines
 └── Dockerfile                # Multi-stage build
 ```
@@ -247,6 +249,11 @@ flowchart LR
 - **Certificate ค้างสถานะ `processing`** — 2 certificate ขอ domain เดียวกันพร้อมกัน
   ตัวที่สองใช้ authorization ซ้ำแล้ว order ไม่เดินต่อ แก้โดยให้ cert-manager
   สร้าง request ใหม่
+- **Redirect HTTP → HTTPS กับการต่ออายุ certificate** — HTTP-01 challenge
+  ของ Let's Encrypt ใช้ port 80 และ redirect ครอบคลุม path `/.well-known/acme-challenge/`
+  ด้วย จึงอาจทำให้ต่ออายุ cert ไม่ผ่าน แทนที่จะรอลุ้นตอน cert ใกล้หมดอายุ
+  ทดสอบโดยสลับไป staging issuer เพื่อบังคับให้ออก cert ใหม่จริง ผลคือผ่านปกติ
+  (Let's Encrypt ตาม redirect ได้) แล้วค่อยสลับกลับเป็น production
 - **การออกแบบ liveness/readiness** — แยก probe เพื่อให้ DB หลุดชั่วคราวกระทบแค่
   readiness (หยุดรับ traffic) แทนที่จะ kill pod ที่ยังดีอยู่
 - **Managed database ปิดตัวเอง** — Aiven free tier ปิด service เมื่อไม่มีการใช้งาน
@@ -260,7 +267,6 @@ flowchart LR
 
 - [ ] **Image promotion** — build ครั้งเดียวแล้ว promote image ตัวเดิม (digest เดียวกัน) ไป prd
 - [ ] **Alert เมื่อ certificate ใกล้หมดอายุ** ผ่าน Prometheus/Alertmanager
-- [ ] **Redirect HTTP → HTTPS**
 - [ ] **Smoke test ใน CI** — รัน container จริงแล้วเรียก endpoint ก่อน deploy
 - [ ] **Validate manifest ใน CI** (kubeconform)
 - [ ] **Infrastructure as Code** (Ansible) สำหรับ provision cluster
@@ -275,4 +281,4 @@ flowchart LR
 - **Name:** Thanut Sukprasertsom
 - **Email:** thanutsukprasertsomm@hotmail.com
 - **GitHub:** https://github.com/thanutgit
-- **LinkedIn:** https://www.linkedin.com/in/thanutsukprasertsom-b77048386/
+- **LinkedIn:** https://www.linkedin.com/in/thanut-sukprasertsom-b77048386/
