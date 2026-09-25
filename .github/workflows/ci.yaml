@@ -41,3 +41,31 @@ jobs:
       # 7) Test — รัน unit test ทั้งหมด (-v = แสดงรายละเอียด)
       - name: Test
         run: go test ./... -v
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # สแกน repo: dependency ใน go.mod, secret ที่เผลอ commit, config ของ Dockerfile/k8s
+      - name: Scan repository
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
+
+      # build image ในเครื่อง CI (ไม่ push) แล้วสแกน package ใน alpine + binary
+      - name: Build image
+        run: docker build -t devopsminiproject:ci .
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: devopsminiproject:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
+          skip-setup-trivy: true 
