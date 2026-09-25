@@ -12,6 +12,12 @@ spec:
       labels:
         app: devops-project
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccomp: 
+          type: RuntimeDefault
       dnsConfig:
         options:
           - name: ndots
@@ -19,6 +25,11 @@ spec:
       containers:
         - name: app
           image: ghcr.io/thanutgit/devopsminiproject:VERSION
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 3010
           livenessProbe:

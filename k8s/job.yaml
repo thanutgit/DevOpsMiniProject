@@ -9,6 +9,12 @@ spec:
   activeDeadlineSeconds: 1200
   template:
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccomp: 
+          type: RuntimeDefault
       dnsConfig:
         options:
           - name: ndots
@@ -16,6 +22,11 @@ spec:
       containers:
         - name: migrate
           image: ghcr.io/thanutgit/devopsminiproject:VERSION
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: APP_SERVICE
               value: "migrator"

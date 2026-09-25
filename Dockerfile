@@ -14,5 +14,7 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/main .
+RUN adduser -D -u 10001 appuser
+USER 10001
 EXPOSE 3010
 CMD ["./main"]
