@@ -49,9 +49,11 @@ jobs:
           fi
 
       # copy manifest ไปอีก repo โดยไม่ build ใหม่
+      # --prefer-index=false = copy ตรงตัว (carbon copy) ไม่ห่อเป็น index ใหม่ → digest เท่าเดิม
       - name: Promote dev to prd
         run: |
           docker buildx imagetools create \
+            --prefer-index=false \
             --tag "$PRD_IMAGE:$TAG" \
             "$DEV_IMAGE:$TAG"
 
