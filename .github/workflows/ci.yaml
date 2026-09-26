@@ -55,7 +55,7 @@ jobs:
           scanners: vuln,secret,misconfig
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: '0'
+          exit-code: '1'
 
       # build image ในเครื่อง CI (ไม่ push) แล้วสแกน package ใน alpine + binary
       - name: Build image
