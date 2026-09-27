@@ -1,0 +1,46 @@
+---
+  - name: Set Hostname
+    ansible.builtin.hostname:
+      name: "{{ inventory_hostname }}"
+  - name: Update /etc/hosts
+    ansible.builtin.lineinfile:
+      path: /etc/hosts
+      regexp: '^127\.0\.1\.1'
+      line: "127.0.1.1 {{ inventory_hostname }}"
+  - name: Disable cloud-init network config
+    ansible.builtin.copy:
+      dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+      content: |
+        network: {config: disabled}
+      mode: '0644'
+  - name: Delete Search Domain from netplan
+    ansible.builtin.lineinfile:
+      path: /etc/netplan/50-cloud-init.yaml
+      regexp: '^\s*search:'
+      state: absent 
+    notify: Apply netplan
+  - name: Allow SSH
+    community.general.ufw:
+      rule: allow
+      name: 'OpenSSH'
+  - name: Allow K3s ports
+    community.general.ufw:
+      rule: allow
+      port: "{{ item.port }}"
+      proto: "{{ item.proto }}"
+    loop:
+      - { port: '6443', proto: tcp }
+      - { port: '10250', proto: tcp }
+      - { port: '8472', proto: udp }
+      - { port: '80', proto: tcp }
+      - { port: '443', proto: tcp }
+  - name: Allow pod and service subnets
+    community.general.ufw:
+      rule: allow
+      from_ip: "{{ item }}"
+    loop:
+      - 10.42.0.0/16
+      - 10.43.0.0/16
+  - name: Enable UFW
+    community.general.ufw:
+      state: enabled
