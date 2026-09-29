@@ -1,7 +1,13 @@
 ---
+  - name: Download k3s install script
+    ansible.builtin.get_url:
+      url: "https://raw.githubusercontent.com/k3s-io/k3s/{{ k3s_version }}/install.sh"
+      dest: /usr/local/bin/k3s-install.sh
+      mode: '0755'
   - name: Install k3s server
-    ansible.builtin.shell: |
-      curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }} sh -
+    ansible.builtin.command: /usr/local/bin/k3s-install.sh
+    environment:
+      INSTALL_K3S_VERSION: "{{ k3s_version }}"
     args:
       creates: /usr/local/bin/k3s
   - name: Wait for token file to be created
