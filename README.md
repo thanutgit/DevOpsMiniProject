@@ -1,9 +1,9 @@
 # DevOps Mini Project — Go API บน Kubernetes ที่ดูแลเอง
 
 > โปรเจค DevOps แบบ end-to-end: นำ Go REST API มา containerize แล้ว deploy ขึ้น
-> **k3s** Kubernetes cluster ที่ตั้งและดูแลเอง รองรับหลาย environment พร้อม
-> **CI/CD pipeline**, **HTTPS อัตโนมัติ**, **monitoring**, **autoscaling** และ flow การเลื่อน
-> โค้ดจาก **dev → production**
+> **k3s** Kubernetes cluster ที่ตั้งและดูแลเอง (provision ด้วย **Ansible**) รองรับหลาย environment พร้อม
+> **CI/CD pipeline**, **security scanning**, **HTTPS อัตโนมัติ**, **monitoring**, **autoscaling**
+> และ **image promotion** ที่ build ครั้งเดียวแล้วใช้ image ตัวเดิมจาก **dev → production**
 
 ![CI](https://github.com/thanutgit/DevOpsMiniProject/actions/workflows/ci.yaml/badge.svg)
 
@@ -76,14 +76,13 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Dev[Push เข้า dev branch] --> CI{CI: tidy / vet / build / test}
-    CI -->|ผ่าน| DevDeploy[Build + Deploy dev]
-    DevDeploy -->|ทดสอบผ่าน| PR[Pull Request dev to main]
-    PR --> CI2{CI รันซ้ำ<br/>ต้องผ่านก่อน merge}
-    CI2 -->|merge| Main[main branch]
-    Main --> Build[Build image prd<br/>จาก main เท่านั้น]
-    Build --> Deploy[Manual deploy ขึ้น prd]
-    Deploy --> K8s[apply manifests<br/>รัน migrate Job แล้ว rollout]
+    Push[Push เข้า dev branch] --> CI{CI<br/>test + security scan}
+    CI -->|ผ่าน| Build[Build image ครั้งเดียว<br/>devopsminiproject-dev:TAG]
+    Build --> DevDeploy[Deploy dev + ทดสอบ]
+    DevDeploy --> PR[Pull Request dev to main<br/>CI ต้องผ่านก่อน merge]
+    PR -->|merge| Promote[Promote จาก main<br/>copy image ไป -prd:TAG<br/>ตรวจ digest ตรงกัน]
+    Promote --> PrdDeploy[Deploy prd ด้วย TAG เดิม]
+    PrdDeploy --> K8s[apply manifests<br/>รัน migrate Job แล้ว rollout]
 ```
 
 ---
@@ -92,10 +91,12 @@ flowchart LR
 
 | ส่วน | เครื่องมือ |
 |---|---|
-| **Language / Framework** | Go 1.25, Fiber v3, GORM |
+| **Language / Framework** | Go 1.26, Fiber v3, GORM |
 | **Containerization** | Docker (multi-stage build บน alpine), GitHub Container Registry (GHCR) |
 | **Orchestration** | Kubernetes (k3s), Traefik Ingress, Helm |
+| **Infrastructure as Code** | Ansible (roles: common, k3s_server, k3s_agent) |
 | **TLS** | cert-manager, Let's Encrypt (HTTP-01) |
+| **Security** | Trivy (scan repo + image), Kubernetes securityContext (non-root, read-only filesystem) |
 | **CI/CD** | GitHub Actions, self-hosted runners, GitHub Environments |
 | **Monitoring** | Prometheus, Grafana (kube-prometheus-stack) |
 | **Testing** | Go testing (table-driven unit tests), k6 (load testing) |
@@ -106,6 +107,26 @@ flowchart LR
 
 ## ฟีเจอร์เด่น (Key Features)
 
+- **Provision cluster ด้วย Ansible** — จาก Ubuntu เปล่าเป็น k3s cluster (master +
+  worker) ในคำสั่งเดียว แบ่งเป็น 3 role: `common` (hostname, ปิด cloud-init network,
+  ลบ search domain, firewall), `k3s_server` และ `k3s_agent` (worker ดึง token จาก
+  master อัตโนมัติผ่าน `hostvars`) pin version ของ k3s ให้ตรงกับ prd, ซ่อน token
+  ด้วย `no_log` และ **idempotent** (รันซ้ำได้ `changed=0`) ทดสอบบน VM โดยถอน k3s
+  ออกแล้วสร้าง cluster ใหม่จาก playbook จากนั้นนำมาจัดการ **prd (VPS) จริง** โดยรัน
+  `--check --diff` ก่อนเพื่อหา config drift แล้วค่อย apply ใช้ inventory แยกต่อ
+  environment และเปิด/ปิด firewall ได้ด้วยตัวแปร (`manage_ufw`)
+- **Image promotion (build once, deploy many)** — build image ครั้งเดียวบน dev แล้ว
+  promote image ตัวเดิมไป prd ด้วย `docker buildx imagetools create` โดยไม่ build ใหม่
+  workflow ตรวจว่า **digest ของ dev และ prd ตรงกัน** เพื่อยืนยันว่า prd รัน image
+  ตัวเดียวกับที่ทดสอบแล้ว, promote ได้จาก `main` เท่านั้น (ต้องผ่าน PR + CI) และ
+  ห้ามเขียนทับ tag ที่มีอยู่แล้วบน prd
+- **Security scanning ใน CI (Trivy)** — สแกน repository (ช่องโหว่ของ dependency,
+  secret ที่หลุดในโค้ด, misconfiguration ของ Dockerfile/Kubernetes manifest) และสแกน
+  container image ที่ build จริง พบช่องโหว่ระดับ HIGH/CRITICAL ที่มีแพตช์แล้ว CI จะ fail
+  และเป็น required check ก่อน merge เข้า `main`
+- **Container hardening** — รันเป็น non-root user (UID 10001), root filesystem แบบ
+  read-only, ตัด Linux capabilities ทั้งหมด, ปิด privilege escalation และใช้
+  seccomp profile `RuntimeDefault`
 - **Multi-stage Docker build** — แยก stage build ออกจาก runtime ทำให้ image เล็กลงมาก
   และฝัง build metadata (version, build time, commit SHA) ลงใน binary ผ่าน `-ldflags`
   แสดงผลที่ endpoint `/about`
@@ -135,19 +156,27 @@ flowchart LR
 โปรเจคใช้ flow **dev → main** พร้อม branch protection:
 
 1. งานทั้งหมดทำบน branch **`dev`**
-2. ทุกครั้งที่ push/PR **CI workflow** จะรันอัตโนมัติ:
-   ตรวจ `go mod tidy` → `go vet` → `go build` → `go test`
-3. Build และ deploy ขึ้น **dev** เพื่อทดสอบบน cluster จริง
-4. **Pull Request** จาก `dev` เข้า `main` ต้องให้ CI ผ่านก่อนถึง merge ได้
-   (บังคับด้วย branch ruleset บน `main`)
-5. Build image production **จาก branch `main` เท่านั้น** แล้ว **deploy ขึ้น
-   production แบบ manual** (คุมจังหวะการ release เอง)
+2. ทุกครั้งที่ push/PR **CI workflow** จะรันอัตโนมัติ 2 job:
+   - `test` — ตรวจ `go mod tidy` → `go vet` → `go build` → `go test`
+   - `security` — Trivy สแกน repository และ container image
+3. **Build image ครั้งเดียว** เป็น `devopsminiproject-dev:<tag>` แล้ว deploy ขึ้น
+   **dev** เพื่อทดสอบบน cluster จริง
+4. **Pull Request** จาก `dev` เข้า `main` ต้องให้ `test` และ `security` ผ่านก่อน
+   ถึง merge ได้ (บังคับด้วย branch ruleset บน `main`)
+5. **Promote** image tag เดิมจาก `-dev` ไป `-prd` (รันจาก `main` เท่านั้น) โดยไม่
+   build ใหม่ และตรวจว่า digest ตรงกัน
+6. **Deploy ขึ้น production แบบ manual** ด้วย tag เดิม (คุมจังหวะการ release เอง)
 
 | Workflow | Trigger | หน้าที่ |
 |---|---|---|
-| `ci.yaml` | push / PR | tidy, vet, build, test โค้ด Go อัตโนมัติ |
-| `workflow.yaml` | manual | build image แล้ว push เข้า GHCR (Docker Buildx) ใช้ tag แบบ calendar versioning |
+| `ci.yaml` | push / PR | test (tidy, vet, build, test) และ security (Trivy scan) |
+| `workflow.yaml` | manual | build image **dev** แล้ว push เข้า GHCR (Docker Buildx) ใช้ tag แบบ calendar versioning |
+| `promote.yaml` | manual | promote image จาก dev ไป prd โดยไม่ build ใหม่ และตรวจ digest |
 | `workflow-deploy.yaml` | manual | deploy ขึ้น dev หรือ prd (self-hosted runner แยก label ต่อ environment) |
+
+> ใช้ 2 package ใน GHCR (`devopsminiproject-dev` และ `devopsminiproject-prd`) แทน
+> registry แยกต่อ environment ใน `-prd` จึงมีเฉพาะ image ที่ผ่านการทดสอบบน dev และ
+> ผ่าน PR มาแล้วเท่านั้น
 
 > ตอนนี้เป็น **Continuous Delivery** — pipeline พร้อม deploy ตลอด แต่ขั้นขึ้น
 > production ตั้งใจให้เป็น manual เพื่อคุมจังหวะการ release ส่วน CI gate
@@ -176,7 +205,15 @@ flowchart LR
 │   ├── hpa.yaml              # HorizontalPodAutoscaler
 │   ├── ingress-dev.yaml      # HTTP
 │   └── ingress-prd.yaml      # HTTPS + cert-manager + redirect middleware
-├── .github/workflows/        # CI, build, deploy pipelines
+├── ansible/                  # Provision k3s cluster (IaC)
+│   ├── inventory.ini         # VM ทดสอบ (master / workers + k3s_version)
+│   ├── inventory-prd.ini     # VPS production
+│   ├── site.yaml             # playbook หลัก: common → k3s_server → k3s_agent
+│   └── roles/
+│       ├── common/           # hostname, cloud-init, netplan, ufw
+│       ├── k3s_server/       # ติดตั้ง server, อ่าน token, ตั้ง kubeconfig
+│       └── k3s_agent/        # ติดตั้ง agent แล้ว join master
+├── .github/workflows/        # CI + security scan, build, promote, deploy pipelines
 └── Dockerfile                # Multi-stage build
 ```
 
@@ -213,15 +250,26 @@ flowchart LR
 
 ขั้นตอนที่ทำครั้งเดียวต่อ cluster ก่อน deploy แอปผ่าน workflow ครั้งแรก:
 
-1. ติดตั้ง k3s บน control-plane และ join worker (hostname ต้องไม่ซ้ำกัน)
-2. ตรวจ netplan ของทุก node ว่าไม่มี search domain ที่ไม่จำเป็น
+1. เตรียมเครื่อง Ubuntu 24.04 ที่มี **IP คงที่** และ SSH ด้วย key ได้ แล้วใส่ใน
+   `ansible/inventory.ini`
+2. สร้าง cluster ด้วย Ansible (hostname, network, firewall, k3s server + agent):
+   ```bash
+   cd ansible
+   ansible-playbook site.yaml -K
+   ```
 3. ติดตั้ง self-hosted runner บน node ที่มี kubeconfig และตั้ง label ตาม environment
 4. ติดตั้ง monitoring:
    `helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace -f k8s/platform/monitoring-values.yaml`
 5. ติดตั้ง cert-manager (เฉพาะ prd):
    `helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --set crds.enabled=true`
 6. `kubectl apply -f k8s/platform/cluster-issuer.yaml`
-7. เปิด port 80 และ 443 ทั้งที่ firewall ของ OS และของผู้ให้บริการ VPS
+7. ถ้าผู้ให้บริการมี firewall ภายนอก ให้เปิด port 22, 80 และ 443 (firewall ของ OS
+   จัดการโดย Ansible แล้ว — เปิดสาธารณะแค่ 3 port นี้ และให้ node คุยกันได้ทุก port)
+
+> cluster prd ถูกตั้งด้วยมือก่อนมี playbook ขั้นตอนที่ทำมือและปัญหาที่เจอ
+> (hostname ซ้ำ, search domain, kubeconfig) ถูกนำมาเขียนเป็น playbook ทดสอบบน VM
+> แล้วนำมาใช้กับ prd ด้วย `ansible-playbook -i inventory-prd.ini site.yaml --check --diff`
+> ก่อน apply จริง ปัจจุบัน prd ถูกจัดการด้วย playbook ชุดเดียวกัน (รันซ้ำได้ `changed=0`)
 
 ---
 
@@ -260,17 +308,58 @@ flowchart LR
   ทำให้ระบบที่เคยทำงานได้พังโดยไม่ได้แก้โค้ด ควรเช็คสถานะ dependency ก่อนไล่ network
 - **`unknown blob` ตอน push เข้า GHCR** — เปลี่ยน build step จาก `docker push` CLI
   แบบเดิม มาเป็น **Docker Buildx (`build-push-action`)**
+- **Promote แล้ว digest ไม่ตรงกัน** — step ตรวจ digest จับได้ว่า image บน prd
+  ไม่ใช่ตัวเดียวกับ dev สาเหตุคือ `imagetools create` ห่อ manifest เดิมไว้ใน
+  image index ใหม่เป็นค่าเริ่มต้น ข้างในยังเป็น image ตัวเดิม แต่ digest ของชั้นนอก
+  เปลี่ยน แก้ด้วย `--prefer-index=false` ให้ copy manifest ตรงตัว ผลคือ digest ตรงกัน
+- **Trivy เจอช่องโหว่ใน binary ทั้งที่ repo สะอาด** — ผลสแกน repository เป็น 0
+  แต่สแกน image ยังเจอช่องโหว่ใน Go standard library ที่ถูก compile ลงใน binary
+  เพราะ Go ใน builder image ของ Dockerfile เป็นเวอร์ชันเก่า แก้โดยอัปเกรด dependency
+  และ pin builder image เป็น Go เวอร์ชันที่มีแพตช์แล้ว (ต้องสแกนทั้ง source และ
+  artifact ที่ build จริง)
+- **`curl | sh` รายงานว่าสำเร็จทั้งที่ไม่ได้ติดตั้งอะไร** — ตอนทดสอบสร้าง cluster
+  ใหม่จาก playbook, `get.k3s.io` ตอบ HTTP 500 แต่ exit code ของ pipe มาจาก `sh`
+  (ได้ input ว่างจึงจบด้วย 0) Ansible จึงขึ้น `changed` แล้วไปค้างรอไฟล์ token จน
+  timeout แก้โดยดาวน์โหลดสคริปต์ติดตั้งที่ pin ตาม version ด้วย `get_url` (fail จริง
+  เมื่อ HTTP error) แล้วรันด้วย `command` แทน `shell` — บั๊กนี้เจอเพราะทดสอบติดตั้ง
+  ใหม่ตั้งแต่ศูนย์ ไม่ใช่แค่รันซ้ำบนเครื่องที่ติดตั้งแล้ว
+- **IP จาก DHCP เปลี่ยนหลังปิดเครื่อง** — k3s ผูก IP ของ master ไว้ใน config ของ
+  worker และใน certificate ถ้า IP เปลี่ยนหลังติดตั้ง cluster จะพัง จึงตั้ง static IP
+  ก่อนติดตั้ง k3s (VPS ไม่มีปัญหานี้เพราะได้ IP ถาวร)
+- **บั๊กเงียบใน playbook** — `hosts: worker` ไม่ตรงกับกลุ่ม `workers` ทำให้ play ถูก
+  ข้าม (`no hosts matched`) โดยไม่มี error และ `no_log` ที่วางผิดระดับกลายเป็นตัวแปร
+  ธรรมดาแทนการซ่อน secret — ต้องอ่าน output ทุก play ไม่ใช่ดูแค่ว่ามี failed ไหม
+- **Config drift บน prd ที่ Ansible ตรวจเจอ** — `--check --diff` พบว่า `/etc/hosts`
+  ของ worker ยังชี้ชื่อ `ubuntu` (ชื่อของ master) มาที่ตัวเอง ทั้งที่เปลี่ยน hostname
+  ไปนานแล้ว สาเหตุคือ user-data ของผู้ให้บริการ VPS ตั้ง `manage_etc_hosts: true`
+  ทำให้ cloud-init เขียน `/etc/hosts` ใหม่ทุกครั้งที่ boot ด้วยชื่อจาก metadata
+  (สองระบบจัดการไฟล์เดียวกัน) ค่านี้อยู่ใน user-data จึงเขียนทับด้วย `cloud.cfg.d`
+  ไม่ได้ แก้โดยปิด cloud-init หลังเครื่องถูกสร้างแล้ว ให้ Ansible เป็นผู้จัดการ
+  เพียงคนเดียว และยืนยันด้วยการ drain → reboot → uncordon worker
+- **Port ภายในของ cluster เปิดสู่อินเทอร์เน็ต** — ตรวจจากภายนอกด้วย `nc` พบว่า
+  6443 (Kubernetes API), 10250 (kubelet) และ 9100 (node-exporter ที่ไม่ต้องยืนยันตัวตน)
+  เข้าได้จากทุกที่ เพราะ ufw บน VPS ไม่เคยถูกเปิดและผู้ให้บริการไม่มี firewall ให้
+  การเปิด ufw ด้วยกฎแบบไล่ port เสี่ยงบล็อก component ที่ไม่ได้นึกถึง จึงออกแบบใหม่เป็น
+  deny เป็นค่าเริ่มต้น, เปิดสาธารณะแค่ 22/80/443 และอนุญาตทุก port ระหว่าง node
+  (ดึง IP จาก inventory ด้วย `map('extract', hostvars, 'ansible_host')`) ทดสอบบน VM
+  ก่อน แล้ว rollout บน prd ด้วย `--check --diff` โดยเปิด Console ของผู้ให้บริการและ
+  SSH session สำรองไว้ จากนั้นยืนยันว่า SSH ใหม่, เว็บ, node, pod และ monitoring
+  ยังทำงาน และ port ภายในเข้าจากข้างนอกไม่ได้แล้ว — ระหว่างเตรียมการใช้ตัวแปร
+  `manage_ufw` ข้าม firewall บน prd ไว้ก่อน (ต้องใช้ `| bool` เพราะค่าจาก inventory
+  แบบ ini เป็น string และ `"false"` ถือเป็นจริง)
 
 ---
 
 ## สิ่งที่จะพัฒนาต่อ (Future Improvements)
 
-- [ ] **Image promotion** — build ครั้งเดียวแล้ว promote image ตัวเดิม (digest เดียวกัน) ไป prd
+- [ ] **ปิด SSH login ด้วยรหัสผ่าน** ผ่าน Ansible (ใช้ SSH key อย่างเดียว)
+- [ ] **ตรวจ drift อัตโนมัติ** — รัน `--check --diff` กับ prd ตามรอบเวลาแล้วแจ้งเตือนเมื่อมี `changed`
+- [ ] **ติดตั้ง Helm charts และ runner ด้วย Ansible** (monitoring, cert-manager, ClusterIssuer)
 - [ ] **Alert เมื่อ certificate ใกล้หมดอายุ** ผ่าน Prometheus/Alertmanager
+- [ ] **Pin GitHub Actions ด้วย commit SHA** และให้ Dependabot อัปเดตให้อัตโนมัติ
+- [ ] **Approval gate ก่อน promote/deploy prd** ด้วย required reviewers ของ GitHub Environments
 - [ ] **Smoke test ใน CI** — รัน container จริงแล้วเรียก endpoint ก่อน deploy
 - [ ] **Validate manifest ใน CI** (kubeconform)
-- [ ] **Infrastructure as Code** (Ansible) สำหรับ provision cluster
-- [ ] **สแกนช่องโหว่ของ image** (Trivy) ใน CI
 - [ ] **Application-level metrics** เปิดที่ `/metrics` ให้ Prometheus เก็บ
 - [ ] **Custom domain** แทน nip.io
 

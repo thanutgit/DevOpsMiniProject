@@ -1,0 +1,43 @@
+---
+  - name: Download k3s install script
+    ansible.builtin.get_url:
+      url: "https://raw.githubusercontent.com/k3s-io/k3s/{{ k3s_version }}/install.sh"
+      dest: /usr/local/bin/k3s-install.sh
+      mode: '0755'
+  - name: Install k3s server
+    ansible.builtin.command: /usr/local/bin/k3s-install.sh
+    environment:
+      INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    args:
+      creates: /usr/local/bin/k3s
+  - name: Wait for token file to be created
+    ansible.builtin.wait_for:
+      path: /var/lib/rancher/k3s/server/node-token
+  - name: Read k3s token
+    ansible.builtin.slurp:
+      src: /var/lib/rancher/k3s/server/node-token
+    register: k3s_token_raw
+  - name: decode k3s token
+    ansible.builtin.set_fact:
+      k3s_token: "{{ k3s_token_raw.content | b64decode | trim }}"
+    no_log: true
+  - name: Create .kube directory
+    ansible.builtin.file:
+      state: directory
+      path: "~{{ ansible_user }}/.kube"
+      owner: "{{ ansible_user }}"
+      group: "{{ ansible_user }}"
+      mode: '0700'
+  - name: Copy kubeconfig
+    ansible.builtin.copy:
+      src: /etc/rancher/k3s/k3s.yaml
+      dest: "~{{ ansible_user }}/.kube/config"
+      owner: "{{ ansible_user }}"
+      group: "{{ ansible_user }}"
+      mode: '0600'
+      remote_src: true
+  - name: Export KUBECONFIG
+    ansible.builtin.lineinfile:
+      path: "~{{ ansible_user }}/.bashrc"
+      regexp: '^export KUBECONFIG='
+      line: 'export KUBECONFIG=$HOME/.kube/config'
