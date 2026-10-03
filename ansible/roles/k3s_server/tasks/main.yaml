@@ -24,20 +24,20 @@
   - name: Create .kube directory
     ansible.builtin.file:
       state: directory
-      path: /home/{{ ansible_user }}/.kube
+      path: "~{{ ansible_user }}/.kube"
       owner: "{{ ansible_user }}"
       group: "{{ ansible_user }}"
       mode: '0700'
   - name: Copy kubeconfig
     ansible.builtin.copy:
       src: /etc/rancher/k3s/k3s.yaml
-      dest: /home/{{ ansible_user }}/.kube/config
+      dest: "~{{ ansible_user }}/.kube/config"
       owner: "{{ ansible_user }}"
       group: "{{ ansible_user }}"
       mode: '0600'
       remote_src: true
   - name: Export KUBECONFIG
     ansible.builtin.lineinfile:
-      path : /home/{{ ansible_user }}/.bashrc
+      path: "~{{ ansible_user }}/.bashrc"
       regexp: '^export KUBECONFIG='
-      line : 'export KUBECONFIG=$HOME/.kube/config'
+      line: 'export KUBECONFIG=$HOME/.kube/config'
