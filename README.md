@@ -115,6 +115,10 @@ flowchart LR
   ออกแล้วสร้าง cluster ใหม่จาก playbook จากนั้นนำมาจัดการ **prd (VPS) จริง** โดยรัน
   `--check --diff` ก่อนเพื่อหา config drift แล้วค่อย apply ใช้ inventory แยกต่อ
   environment และเปิด/ปิด firewall ได้ด้วยตัวแปร (`manage_ufw`)
+- **Server hardening** — firewall (ufw) แบบ deny เป็นค่าเริ่มต้น เปิดสาธารณะแค่
+  22/80/443 และ SSH รับเฉพาะ key (ปิด password และ keyboard-interactive, root เข้าได้
+  ด้วย key เท่านั้น) ตรวจ syntax ด้วย `sshd -t` ก่อนวางไฟล์ และยืนยันค่าที่ใช้จริงด้วย
+  `sshd -T`
 - **Image promotion (build once, deploy many)** — build image ครั้งเดียวบน dev แล้ว
   promote image ตัวเดิมไป prd ด้วย `docker buildx imagetools create` โดยไม่ build ใหม่
   workflow ตรวจว่า **digest ของ dev และ prd ตรงกัน** เพื่อยืนยันว่า prd รัน image
@@ -210,7 +214,7 @@ flowchart LR
 │   ├── inventory-prd.ini     # VPS production
 │   ├── site.yaml             # playbook หลัก: common → k3s_server → k3s_agent
 │   └── roles/
-│       ├── common/           # hostname, cloud-init, netplan, ufw
+│       ├── common/           # hostname, cloud-init, netplan, ufw, SSH hardening
 │       ├── k3s_server/       # ติดตั้ง server, อ่าน token, ตั้ง kubeconfig
 │       └── k3s_agent/        # ติดตั้ง agent แล้ว join master
 ├── .github/workflows/        # CI + security scan, build, promote, deploy pipelines
@@ -347,24 +351,15 @@ flowchart LR
   ยังทำงาน และ port ภายในเข้าจากข้างนอกไม่ได้แล้ว — ระหว่างเตรียมการใช้ตัวแปร
   `manage_ufw` ข้าม firewall บน prd ไว้ก่อน (ต้องใช้ `| bool` เพราะค่าจาก inventory
   แบบ ini เป็น string และ `"false"` ถือเป็นจริง)
+- **ปิด SSH password โดยไม่ล็อกตัวเองออก** — ค่าที่ตั้งใน `sshd_config` อาจไม่มีผล
+  เพราะ cloud image มี `sshd_config.d/50-cloud-init.conf` ที่เปิด password ไว้ และ sshd
+  ใช้ค่าที่เจอก่อน จึงวาง config เป็น `00-hardening.conf` ให้ถูกอ่านก่อน ส่วน
+  `PermitRootLogin no` จะตัด Ansible ออกจาก prd (เชื่อมต่อด้วย root) จึงใช้
+  `prohibit-password` แทน ก่อน rollout ทดสอบ login ด้วย key แบบบังคับปิด password
+  ทุกเครื่อง และหลัง rollout ยืนยันว่า login ด้วย password ถูกปฏิเสธ
+  (`Permission denied (publickey)`)
 
 ---
-
-## สิ่งที่จะพัฒนาต่อ (Future Improvements)
-
-- [ ] **ปิด SSH login ด้วยรหัสผ่าน** ผ่าน Ansible (ใช้ SSH key อย่างเดียว)
-- [ ] **ตรวจ drift อัตโนมัติ** — รัน `--check --diff` กับ prd ตามรอบเวลาแล้วแจ้งเตือนเมื่อมี `changed`
-- [ ] **ติดตั้ง Helm charts และ runner ด้วย Ansible** (monitoring, cert-manager, ClusterIssuer)
-- [ ] **Alert เมื่อ certificate ใกล้หมดอายุ** ผ่าน Prometheus/Alertmanager
-- [ ] **Pin GitHub Actions ด้วย commit SHA** และให้ Dependabot อัปเดตให้อัตโนมัติ
-- [ ] **Approval gate ก่อน promote/deploy prd** ด้วย required reviewers ของ GitHub Environments
-- [ ] **Smoke test ใน CI** — รัน container จริงแล้วเรียก endpoint ก่อน deploy
-- [ ] **Validate manifest ใน CI** (kubeconform)
-- [ ] **Application-level metrics** เปิดที่ `/metrics` ให้ Prometheus เก็บ
-- [ ] **Custom domain** แทน nip.io
-
----
-
 ## ผู้จัดทำ (Author)
 
 - **Name:** Thanut Sukprasertsom
