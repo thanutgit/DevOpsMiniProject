@@ -1,4 +1,17 @@
 ---
+  - name: Harden SSH (key-only login)
+    ansible.builtin.copy:
+      dest: /etc/ssh/sshd_config.d/00-hardening.conf
+      content: |
+        # Disable root login
+        PermitRootLogin prohibit-password
+        # Disable password authentication
+        PasswordAuthentication no
+        # KbdInteractiveAuthentication
+        KbdInteractiveAuthentication no
+      mode: '0644'
+      validate: 'sshd -t -f %s'
+    notify: Restart SSH
   - name: Set Hostname
     ansible.builtin.hostname:
       name: "{{ inventory_hostname }}"
@@ -35,7 +48,7 @@
         community.general.ufw:
           default: deny
           direction: incoming
-      - name: Allow HTTP/HTTPS form anywhere
+      - name: Allow HTTP/HTTPS from anywhere
         community.general.ufw:
           rule: allow
           port: "{{ item }}"
