@@ -1,4 +1,10 @@
 ---
+  - name: Authorize SSH keys
+    ansible.posix.authorized_key:
+      user: "{{ ansible_user }}"
+      key: "{{ lookup('file', item) }}"
+      state: present
+    loop: "{{ query('fileglob', 'ssh_keys/*.pub') }}"
   - name: Harden SSH (key-only login)
     ansible.builtin.copy:
       dest: /etc/ssh/sshd_config.d/00-hardening.conf
