@@ -31,3 +31,6 @@ go.work.sum
 # Editor/IDE
 .idea/
 .vscode/
+# Helm values ที่มี secret (เช่น webhook URL) ห้าม commit
+*-discord-values.yaml
+*-secret-values.yaml
