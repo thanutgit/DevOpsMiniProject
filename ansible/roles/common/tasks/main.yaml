@@ -3,6 +3,7 @@
     ansible.posix.authorized_key:
       user: "{{ ansible_user }}"
       key: "{{ lookup('file', item) }}"
+      comment: "{{ item | basename | splitext | first }}"
       state: present
     loop: "{{ query('fileglob', 'ssh_keys/*.pub') }}"
   - name: Harden SSH (key-only login)
