@@ -1,0 +1,82 @@
+- name: Install Python Kubernetes client (needed by kubernetes.core.k8s)
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check installed helm version
+  ansible.builtin.command: helm version --short
+  register: helm_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install helm {{ helm_version }}
+  when: helm_installed.rc != 0 or helm_version not in helm_installed.stdout
+  block:
+    - name: Download and extract helm
+      ansible.builtin.unarchive:
+        src: "https://get.helm.sh/helm-{{ helm_version }}-linux-{{ helm_arch }}.tar.gz"
+        dest: /tmp
+        remote_src: true
+
+    - name: Install helm binary
+      ansible.builtin.copy:
+        src: "/tmp/linux-{{ helm_arch }}/helm"
+        dest: /usr/local/bin/helm
+        mode: '0755'
+        remote_src: true
+
+- name: Add helm repositories
+  kubernetes.core.helm_repository:
+    name: "{{ item.name }}"
+    repo_url: "{{ item.url }}"
+  loop:
+    - { name: prometheus-community, url: "https://prometheus-community.github.io/helm-charts" }
+    - { name: jetstack, url: "https://charts.jetstack.io" }
+
+- name: Load secrets for {{ env_name }}
+  ansible.builtin.include_vars: "{{ playbook_dir }}/secrets/{{ env_name }}.yaml"
+  no_log: true
+
+- name: Install kube-prometheus-stack
+  kubernetes.core.helm:
+    name: monitoring
+    chart_ref: prometheus-community/kube-prometheus-stack
+    chart_version: "{{ kube_prometheus_stack_chart_version }}"
+    release_namespace: monitoring
+    create_namespace: true
+    kubeconfig: "{{ kubeconfig_path }}"
+    values: >-
+      {{ lookup('file', platform_dir + '/monitoring-values.yaml') | from_yaml
+         | combine(alertmanager_receivers, recursive=true) }}
+    wait: true
+    timeout: 10m0s
+  no_log: true
+
+- name: Install cert-manager
+  when: install_cert_manager | bool
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: jetstack/cert-manager
+    chart_version: "{{ cert_manager_chart_version }}"
+    release_namespace: cert-manager
+    create_namespace: true
+    kubeconfig: "{{ kubeconfig_path }}"
+    values: "{{ lookup('file', platform_dir + '/cert-manager-values.yaml') | from_yaml }}"
+    wait: true
+
+- name: Apply ClusterIssuers
+  when: install_cert_manager | bool
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition: "{{ lookup('file', platform_dir + '/cluster-issuer.yaml') | from_yaml_all | list }}"
+
+- name: Apply certificate alert rules
+  when: install_cert_manager | bool
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition: "{{ lookup('file', platform_dir + '/cert-alerts.yaml') | from_yaml_all | list }}"
