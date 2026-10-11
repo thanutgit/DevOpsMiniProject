@@ -13,3 +13,8 @@
   become: true
   roles:
     - k3s_agent
+- name: Platform components (helm charts, manifests)
+  hosts: master
+  become: true
+  roles:
+    - platform

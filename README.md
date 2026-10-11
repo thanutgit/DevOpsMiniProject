@@ -98,7 +98,7 @@ flowchart LR
 | **TLS** | cert-manager, Let's Encrypt (HTTP-01) |
 | **Security** | Trivy (scan repo + image), Kubernetes securityContext (non-root, read-only filesystem) |
 | **CI/CD** | GitHub Actions, self-hosted runners, GitHub Environments |
-| **Monitoring** | Prometheus, Grafana (kube-prometheus-stack) |
+| **Monitoring / Alerting** | Prometheus, Grafana, Alertmanager (kube-prometheus-stack), แจ้งเตือนผ่าน Discord |
 | **Testing** | Go testing (table-driven unit tests), k6 (load testing) |
 | **Database** | MySQL (Aiven) |
 | **Infrastructure** | VPS (production), VirtualBox (development) |
@@ -152,6 +152,13 @@ flowchart LR
 - **แยก platform กับ application** — ของที่ตั้งครั้งเดียวต่อ cluster (`k8s/platform/`)
   แยกจาก manifest ที่ deploy ทุก release
 - **Monitoring stack** — Prometheus + Grafana ติดตั้งผ่าน Helm เปิดที่ `/grafana`
+- **Alert เมื่อ certificate ใกล้หมดอายุ** — ให้ Prometheus เก็บ metrics ของ cert-manager
+  ผ่าน ServiceMonitor แล้วเขียน `PrometheusRule` 2 ตัว: เตือนเมื่อ cert เหลือน้อยกว่า
+  14 วัน (cert-manager ต่ออายุตอนเหลือ 30 วัน alert จึงดังเฉพาะเมื่อการต่ออายุล้มเหลว
+  ต่อเนื่อง) และเมื่อ cert ไม่ Ready นาน 15 นาที Alertmanager ส่งเข้า Discord เฉพาะ
+  alert เรื่อง cert (กัน alert ของ component ที่ k3s ไม่ได้แยก process ออกมา) และแจ้ง
+  ตอนปัญหาหายด้วย ทดสอบทั้งเส้นโดยลดเงื่อนไขชั่วคราวให้ alert ดังจริง webhook URL
+  เก็บแยกในไฟล์ values ที่ไม่ commit
 
 ---
 
@@ -201,7 +208,9 @@ flowchart LR
 ├── k8s/
 │   ├── platform/             # ตั้งครั้งเดียวต่อ cluster (ไม่ได้ deploy ทุก release)
 │   │   ├── cluster-issuer.yaml       # Let's Encrypt staging + production
-│   │   └── monitoring-values.yaml    # ค่าของ kube-prometheus-stack
+│   │   ├── cert-manager-values.yaml  # ค่าของ cert-manager (เปิด ServiceMonitor)
+│   │   ├── cert-alerts.yaml          # PrometheusRule: cert ใกล้หมดอายุ / ไม่ Ready
+│   │   └── monitoring-values.yaml    # ค่าของ kube-prometheus-stack + Alertmanager route
 │   ├── namespace.yaml
 │   ├── configmap-dev.yaml / configmap-prd.yaml
 │   ├── app.yaml              # Deployment + Service
@@ -241,6 +250,7 @@ flowchart LR
 
 - **Grafana dashboards** (จาก kube-prometheus-stack) ติดตาม CPU/memory ราย pod,
   ราย namespace และราย node
+- **Alerting** — แจ้งเตือนเข้า Discord เมื่อ TLS certificate ใกล้หมดอายุหรือไม่ Ready
 - **Load testing ด้วย k6** ยิง traffic เข้า API เพื่อยืนยันว่า HPA scale replicas
   ขึ้นเมื่อ CPU สูงต่อเนื่อง และ scale ลงหลังพ้น stabilization window
 
@@ -262,11 +272,20 @@ flowchart LR
    ansible-playbook site.yaml -K
    ```
 3. ติดตั้ง self-hosted runner บน node ที่มี kubeconfig และตั้ง label ตาม environment
-4. ติดตั้ง monitoring:
-   `helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace -f k8s/platform/monitoring-values.yaml`
+4. ติดตั้ง monitoring — สร้างไฟล์ `alertmanager-discord-values.yaml` (ไม่ commit,
+   อยู่ใน `.gitignore`) ที่มี `alertmanager.config.receivers` พร้อม Discord webhook URL
+   แล้วรัน:
+   ```bash
+   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+     -n monitoring --create-namespace \
+     -f k8s/platform/monitoring-values.yaml -f alertmanager-discord-values.yaml
+   ```
 5. ติดตั้ง cert-manager (เฉพาะ prd):
-   `helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --set crds.enabled=true`
-6. `kubectl apply -f k8s/platform/cluster-issuer.yaml`
+   ```bash
+   helm upgrade --install cert-manager jetstack/cert-manager -n cert-manager \
+     --create-namespace -f k8s/platform/cert-manager-values.yaml
+   ```
+6. `kubectl apply -f k8s/platform/cluster-issuer.yaml -f k8s/platform/cert-alerts.yaml`
 7. ถ้าผู้ให้บริการมี firewall ภายนอก ให้เปิด port 22, 80 และ 443 (firewall ของ OS
    จัดการโดย Ansible แล้ว — เปิดสาธารณะแค่ 3 port นี้ และให้ node คุยกันได้ทุก port)
 
@@ -358,8 +377,34 @@ flowchart LR
   `prohibit-password` แทน ก่อน rollout ทดสอบ login ด้วย key แบบบังคับปิด password
   ทุกเครื่อง และหลัง rollout ยืนยันว่า login ด้วย password ถูกปฏิเสธ
   (`Permission denied (publickey)`)
+- **Config ถูกตาม doc ของ Alertmanager แต่ operator ไม่ยอมรับ** — ใช้
+  `webhook_url_file` เพื่ออ่าน Discord URL จาก Secret แต่หลัง `helm upgrade` pod ของ
+  Alertmanager ไม่ถูกสร้างใหม่ ไล่จาก resource → StatefulSet → pod แล้วดู
+  `status.conditions` (`ReconciliationFailed`) กับ log ของ Prometheus Operator พบว่า
+  operator v0.91 ไม่รู้จัก field นี้จึงไม่ apply config เลย (pod เดิมยังทำงานด้วย config
+  เก่า ไม่มี downtime) แก้โดยใช้ `webhook_url` และแยก receivers ที่มี URL ไว้ในไฟล์
+  values อีกไฟล์ที่ไม่ commit แล้วส่งให้ Helm ด้วย `-f` 2 ไฟล์
+- **ServiceMonitor/PrometheusRule ที่ Prometheus มองไม่เห็น** — kube-prometheus-stack
+  เลือกเฉพาะ resource ที่มี label `release: <ชื่อ release>` ถ้าไม่ใส่จะไม่มี error
+  แต่ไม่มี metrics/rule จึงใส่ label นี้ทั้งใน values ของ cert-manager และใน
+  PrometheusRule แล้วยืนยันใน Grafana ว่า metric และ rule ถูกโหลดจริง
 
 ---
+
+## สิ่งที่จะพัฒนาต่อ (Future Improvements)
+
+- [ ] **ใช้ user ปกติ + sudo แทน root บน prd** แล้วปิด root login (`PermitRootLogin no`)
+- [ ] **ตรวจ drift อัตโนมัติ** — รัน `--check --diff` กับ prd ตามรอบเวลาแล้วแจ้งเตือนเมื่อมี `changed`
+- [ ] **ติดตั้ง Helm charts และ runner ด้วย Ansible** (monitoring, cert-manager, ClusterIssuer, alert rules) เก็บ webhook URL ด้วย Ansible Vault
+- [ ] **Pin GitHub Actions ด้วย commit SHA** และให้ Dependabot อัปเดตให้อัตโนมัติ
+- [ ] **Approval gate ก่อน promote/deploy prd** ด้วย required reviewers ของ GitHub Environments
+- [ ] **Smoke test ใน CI** — รัน container จริงแล้วเรียก endpoint ก่อน deploy
+- [ ] **Validate manifest ใน CI** (kubeconform)
+- [ ] **Application-level metrics** เปิดที่ `/metrics` ให้ Prometheus เก็บ
+- [ ] **Custom domain** แทน nip.io
+
+---
+
 ## ผู้จัดทำ (Author)
 
 - **Name:** Thanut Sukprasertsom

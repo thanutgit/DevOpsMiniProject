@@ -1,0 +1,27 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cert-expiry
+  namespace: monitoring
+  labels:
+    release: monitoring          # เหตุผลเดียวกับ ServiceMonitor: ให้ Prometheus มองเห็น
+spec:
+  groups:
+    - name: certificates
+      rules:
+        - alert: CertificateExpiringSoon
+          expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 14
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} expires in {{ $value | humanize }} days"
+            description: "Renewal should have happened at 30 days left. Check: kubectl describe certificate -n {{ $labels.exported_namespace }} {{ $labels.name }}"
+
+        - alert: CertificateNotReady
+          expr: certmanager_certificate_ready_status{condition="False"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} is not Ready"
