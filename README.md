@@ -94,7 +94,7 @@ flowchart LR
 | **Language / Framework** | Go 1.26, Fiber v3, GORM |
 | **Containerization** | Docker (multi-stage build บน alpine), GitHub Container Registry (GHCR) |
 | **Orchestration** | Kubernetes (k3s), Traefik Ingress, Helm |
-| **Infrastructure as Code** | Ansible (roles: common, k3s_server, k3s_agent) |
+| **Infrastructure as Code** | Ansible (roles: common, k3s_server, k3s_agent, platform), Ansible Vault |
 | **TLS** | cert-manager, Let's Encrypt (HTTP-01) |
 | **Security** | Trivy (scan repo + image), Kubernetes securityContext (non-root, read-only filesystem) |
 | **CI/CD** | GitHub Actions, self-hosted runners, GitHub Environments |
@@ -115,6 +115,18 @@ flowchart LR
   ออกแล้วสร้าง cluster ใหม่จาก playbook จากนั้นนำมาจัดการ **prd (VPS) จริง** โดยรัน
   `--check --diff` ก่อนเพื่อหา config drift แล้วค่อย apply ใช้ inventory แยกต่อ
   environment และเปิด/ปิด firewall ได้ด้วยตัวแปร (`manage_ufw`)
+- **Platform เป็น code ทั้งหมด** — role `platform` ติดตั้ง helm (pin version),
+  kube-prometheus-stack และ cert-manager ด้วย `kubernetes.core.helm` (pin chart version)
+  และ apply ClusterIssuer + alert rules ด้วย `kubernetes.core.k8s` โดยอ่าน values และ
+  manifest จาก `k8s/platform/` ใน repo โดยตรง (git เป็นแหล่งความจริงที่เดียว) Discord
+  webhook เก็บใน **Ansible Vault** แล้วรวมเข้ากับ values **ในหน่วยความจำ** ไม่มีไฟล์ secret
+  บนดิสก์ เปิด/ปิด cert-manager ต่อ environment ได้ และ pin collection ไว้ใน
+  `requirements.yaml` นำมาครอบ prd ที่เคยติดตั้งด้วยมือได้ด้วย `--check --diff` ที่ผล
+  เป็น `ok` ทั้งหมด (ของจริงตรงกับ repo ทุกอย่าง ไม่มี upgrade ซ้ำ)
+- **Supply chain ของสคริปต์ติดตั้ง** — สคริปต์ติดตั้ง k3s ถูกตรวจด้วย sha256 ที่ pin
+  ไว้คู่กับ `k3s_version` ถ้าสคริปต์ถูกแก้จะไม่ถูกรันด้วย root
+- **SSH keys เป็น code** — public key ของทุกเครื่องที่เข้าได้อยู่ใน repo และถูกใส่ด้วย
+  `authorized_key` (comment ตามชื่อไฟล์) เพิ่ม/ถอนสิทธิ์ผ่าน PR
 - **Server hardening** — firewall (ufw) แบบ deny เป็นค่าเริ่มต้น เปิดสาธารณะแค่
   22/80/443 และ SSH รับเฉพาะ key (ปิด password และ keyboard-interactive, root เข้าได้
   ด้วย key เท่านั้น) ตรวจ syntax ด้วย `sshd -t` ก่อนวางไฟล์ และยืนยันค่าที่ใช้จริงด้วย
@@ -158,7 +170,7 @@ flowchart LR
   ต่อเนื่อง) และเมื่อ cert ไม่ Ready นาน 15 นาที Alertmanager ส่งเข้า Discord เฉพาะ
   alert เรื่อง cert (กัน alert ของ component ที่ k3s ไม่ได้แยก process ออกมา) และแจ้ง
   ตอนปัญหาหายด้วย ทดสอบทั้งเส้นโดยลดเงื่อนไขชั่วคราวให้ alert ดังจริง webhook URL
-  เก็บแยกในไฟล์ values ที่ไม่ commit
+  เก็บใน Ansible Vault
 
 ---
 
@@ -221,11 +233,14 @@ flowchart LR
 ├── ansible/                  # Provision k3s cluster (IaC)
 │   ├── inventory.ini         # VM ทดสอบ (master / workers + k3s_version)
 │   ├── inventory-prd.ini     # VPS production
-│   ├── site.yaml             # playbook หลัก: common → k3s_server → k3s_agent
+│   ├── site.yaml             # playbook หลัก: common → k3s_server → k3s_agent → platform
+│   ├── requirements.yaml     # pin Ansible collections
+│   ├── secrets/              # vm.yaml / prd.yaml เข้ารหัสด้วย Ansible Vault
 │   └── roles/
-│       ├── common/           # hostname, cloud-init, netplan, ufw, SSH hardening
+│       ├── common/           # SSH keys, SSH hardening, hostname, cloud-init, netplan, ufw
 │       ├── k3s_server/       # ติดตั้ง server, อ่าน token, ตั้ง kubeconfig
-│       └── k3s_agent/        # ติดตั้ง agent แล้ว join master
+│       ├── k3s_agent/        # ติดตั้ง agent แล้ว join master
+│       └── platform/         # helm, kube-prometheus-stack, cert-manager, ClusterIssuer, alert rules
 ├── .github/workflows/        # CI + security scan, build, promote, deploy pipelines
 └── Dockerfile                # Multi-stage build
 ```
@@ -266,142 +281,28 @@ flowchart LR
 
 1. เตรียมเครื่อง Ubuntu 24.04 ที่มี **IP คงที่** และ SSH ด้วย key ได้ แล้วใส่ใน
    `ansible/inventory.ini`
-2. สร้าง cluster ด้วย Ansible (hostname, network, firewall, k3s server + agent):
+2. สร้างไฟล์ secret ด้วย Ansible Vault (ใส่ `discord_webhook_url`) และติดตั้ง collection:
    ```bash
    cd ansible
-   ansible-playbook site.yaml -K
+   ansible-galaxy collection install -r requirements.yaml
+   ansible-vault create secrets/vm.yaml
    ```
-3. ติดตั้ง self-hosted runner บน node ที่มี kubeconfig และตั้ง label ตาม environment
-4. ติดตั้ง monitoring — สร้างไฟล์ `alertmanager-discord-values.yaml` (ไม่ commit,
-   อยู่ใน `.gitignore`) ที่มี `alertmanager.config.receivers` พร้อม Discord webhook URL
-   แล้วรัน:
+3. สร้าง cluster และ platform ทั้งหมดในคำสั่งเดียว (OS, firewall, k3s server + agent,
+   helm, kube-prometheus-stack, cert-manager, ClusterIssuer, alert rules):
    ```bash
-   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-     -n monitoring --create-namespace \
-     -f k8s/platform/monitoring-values.yaml -f alertmanager-discord-values.yaml
+   ansible-playbook site.yaml -K --ask-vault-pass
+   # prd: ansible-playbook -i inventory-prd.ini site.yaml --ask-vault-pass --check --diff
    ```
-5. ติดตั้ง cert-manager (เฉพาะ prd):
-   ```bash
-   helm upgrade --install cert-manager jetstack/cert-manager -n cert-manager \
-     --create-namespace -f k8s/platform/cert-manager-values.yaml
-   ```
-6. `kubectl apply -f k8s/platform/cluster-issuer.yaml -f k8s/platform/cert-alerts.yaml`
-7. ถ้าผู้ให้บริการมี firewall ภายนอก ให้เปิด port 22, 80 และ 443 (firewall ของ OS
+4. ติดตั้ง self-hosted runner บน node ที่มี kubeconfig และตั้ง label ตาม environment
+5. ถ้าผู้ให้บริการมี firewall ภายนอก ให้เปิด port 22, 80 และ 443 (firewall ของ OS
    จัดการโดย Ansible แล้ว — เปิดสาธารณะแค่ 3 port นี้ และให้ node คุยกันได้ทุก port)
 
 > cluster prd ถูกตั้งด้วยมือก่อนมี playbook ขั้นตอนที่ทำมือและปัญหาที่เจอ
 > (hostname ซ้ำ, search domain, kubeconfig) ถูกนำมาเขียนเป็น playbook ทดสอบบน VM
 > แล้วนำมาใช้กับ prd ด้วย `ansible-playbook -i inventory-prd.ini site.yaml --check --diff`
-> ก่อน apply จริง ปัจจุบัน prd ถูกจัดการด้วย playbook ชุดเดียวกัน (รันซ้ำได้ `changed=0`)
-
----
-
-## ปัญหาที่เจอและวิธีแก้ (Challenges & Solutions)
-
-ตัวอย่างปัญหาจริงที่แก้ระหว่างทำโปรเจค:
-
-- **Search domain + `ndots:5` ทำให้ต่อ database ผิดที่** — migration Job timeout
-  ทั้งที่ `dig` จาก host ได้ IP ถูกต้อง ใช้ `getent` ใน pod (ซึ่งใช้ search list
-  เหมือนแอป) พบว่า node มี search domain `com` จาก netplan ของผู้ให้บริการ VPS
-  ทำให้ชื่อถูกขยายเป็น `*.aivencloud.com.com` แล้วไปชน wildcard DNS ของ domain อื่น
-  แก้ที่ node และตั้ง `dnsConfig.ndots` ใน pod spec เป็นชั้นป้องกันเพิ่ม
-- **Panic จาก `time.LoadLocation` หลังเปลี่ยน image เป็น alpine** — alpine ไม่มี
-  tzdata และโค้ดทิ้ง error ไว้ ทำให้ pod ตายเมื่อมีคนเปิดหน้าแรก แต่ probe ยังผ่าน
-  unit test ไม่จับเพราะ CI runner มี tzdata แก้โดยฝัง `time/tzdata` ลงใน binary
-  และเพิ่ม fallback เมื่อโหลด timezone ไม่ได้
-- **`Connection refused` กับ `timed out`** — ใช้ความต่างนี้วิเคราะห์ว่า kubelet
-  ไม่ได้ listen (ไม่ใช่ปัญหา firewall) เมื่อ pod บน worker ค้าง
-- **Worker node join ไม่ได้ (`Node password rejected`)** — เกิดจาก hostname ซ้ำและ
-  node-password ไม่ตรงกัน แก้โดยล้าง credential **ทั้ง 2 ฝั่ง** ทั้งที่ server
-  (secret) และ agent (`/etc/rancher/node/password`)
-- **`kubectl apply` ไม่ลบ resource เก่า** — ไฟล์ ingress ว่างทำให้ deploy fail
-  แต่เว็บยังเข้าได้เพราะ ingress ตัวเดิมค้างอยู่ใน cluster (config drift) ตรวจผล
-  ของ workflow แทนการดูแค่ว่าเว็บยังเข้าได้
-- **Certificate ค้างสถานะ `processing`** — 2 certificate ขอ domain เดียวกันพร้อมกัน
-  ตัวที่สองใช้ authorization ซ้ำแล้ว order ไม่เดินต่อ แก้โดยให้ cert-manager
-  สร้าง request ใหม่
-- **Redirect HTTP → HTTPS กับการต่ออายุ certificate** — HTTP-01 challenge
-  ของ Let's Encrypt ใช้ port 80 และ redirect ครอบคลุม path `/.well-known/acme-challenge/`
-  ด้วย จึงอาจทำให้ต่ออายุ cert ไม่ผ่าน แทนที่จะรอลุ้นตอน cert ใกล้หมดอายุ
-  ทดสอบโดยสลับไป staging issuer เพื่อบังคับให้ออก cert ใหม่จริง ผลคือผ่านปกติ
-  (Let's Encrypt ตาม redirect ได้) แล้วค่อยสลับกลับเป็น production
-- **การออกแบบ liveness/readiness** — แยก probe เพื่อให้ DB หลุดชั่วคราวกระทบแค่
-  readiness (หยุดรับ traffic) แทนที่จะ kill pod ที่ยังดีอยู่
-- **Managed database ปิดตัวเอง** — Aiven free tier ปิด service เมื่อไม่มีการใช้งาน
-  ทำให้ระบบที่เคยทำงานได้พังโดยไม่ได้แก้โค้ด ควรเช็คสถานะ dependency ก่อนไล่ network
-- **`unknown blob` ตอน push เข้า GHCR** — เปลี่ยน build step จาก `docker push` CLI
-  แบบเดิม มาเป็น **Docker Buildx (`build-push-action`)**
-- **Promote แล้ว digest ไม่ตรงกัน** — step ตรวจ digest จับได้ว่า image บน prd
-  ไม่ใช่ตัวเดียวกับ dev สาเหตุคือ `imagetools create` ห่อ manifest เดิมไว้ใน
-  image index ใหม่เป็นค่าเริ่มต้น ข้างในยังเป็น image ตัวเดิม แต่ digest ของชั้นนอก
-  เปลี่ยน แก้ด้วย `--prefer-index=false` ให้ copy manifest ตรงตัว ผลคือ digest ตรงกัน
-- **Trivy เจอช่องโหว่ใน binary ทั้งที่ repo สะอาด** — ผลสแกน repository เป็น 0
-  แต่สแกน image ยังเจอช่องโหว่ใน Go standard library ที่ถูก compile ลงใน binary
-  เพราะ Go ใน builder image ของ Dockerfile เป็นเวอร์ชันเก่า แก้โดยอัปเกรด dependency
-  และ pin builder image เป็น Go เวอร์ชันที่มีแพตช์แล้ว (ต้องสแกนทั้ง source และ
-  artifact ที่ build จริง)
-- **`curl | sh` รายงานว่าสำเร็จทั้งที่ไม่ได้ติดตั้งอะไร** — ตอนทดสอบสร้าง cluster
-  ใหม่จาก playbook, `get.k3s.io` ตอบ HTTP 500 แต่ exit code ของ pipe มาจาก `sh`
-  (ได้ input ว่างจึงจบด้วย 0) Ansible จึงขึ้น `changed` แล้วไปค้างรอไฟล์ token จน
-  timeout แก้โดยดาวน์โหลดสคริปต์ติดตั้งที่ pin ตาม version ด้วย `get_url` (fail จริง
-  เมื่อ HTTP error) แล้วรันด้วย `command` แทน `shell` — บั๊กนี้เจอเพราะทดสอบติดตั้ง
-  ใหม่ตั้งแต่ศูนย์ ไม่ใช่แค่รันซ้ำบนเครื่องที่ติดตั้งแล้ว
-- **IP จาก DHCP เปลี่ยนหลังปิดเครื่อง** — k3s ผูก IP ของ master ไว้ใน config ของ
-  worker และใน certificate ถ้า IP เปลี่ยนหลังติดตั้ง cluster จะพัง จึงตั้ง static IP
-  ก่อนติดตั้ง k3s (VPS ไม่มีปัญหานี้เพราะได้ IP ถาวร)
-- **บั๊กเงียบใน playbook** — `hosts: worker` ไม่ตรงกับกลุ่ม `workers` ทำให้ play ถูก
-  ข้าม (`no hosts matched`) โดยไม่มี error และ `no_log` ที่วางผิดระดับกลายเป็นตัวแปร
-  ธรรมดาแทนการซ่อน secret — ต้องอ่าน output ทุก play ไม่ใช่ดูแค่ว่ามี failed ไหม
-- **Config drift บน prd ที่ Ansible ตรวจเจอ** — `--check --diff` พบว่า `/etc/hosts`
-  ของ worker ยังชี้ชื่อ `ubuntu` (ชื่อของ master) มาที่ตัวเอง ทั้งที่เปลี่ยน hostname
-  ไปนานแล้ว สาเหตุคือ user-data ของผู้ให้บริการ VPS ตั้ง `manage_etc_hosts: true`
-  ทำให้ cloud-init เขียน `/etc/hosts` ใหม่ทุกครั้งที่ boot ด้วยชื่อจาก metadata
-  (สองระบบจัดการไฟล์เดียวกัน) ค่านี้อยู่ใน user-data จึงเขียนทับด้วย `cloud.cfg.d`
-  ไม่ได้ แก้โดยปิด cloud-init หลังเครื่องถูกสร้างแล้ว ให้ Ansible เป็นผู้จัดการ
-  เพียงคนเดียว และยืนยันด้วยการ drain → reboot → uncordon worker
-- **Port ภายในของ cluster เปิดสู่อินเทอร์เน็ต** — ตรวจจากภายนอกด้วย `nc` พบว่า
-  6443 (Kubernetes API), 10250 (kubelet) และ 9100 (node-exporter ที่ไม่ต้องยืนยันตัวตน)
-  เข้าได้จากทุกที่ เพราะ ufw บน VPS ไม่เคยถูกเปิดและผู้ให้บริการไม่มี firewall ให้
-  การเปิด ufw ด้วยกฎแบบไล่ port เสี่ยงบล็อก component ที่ไม่ได้นึกถึง จึงออกแบบใหม่เป็น
-  deny เป็นค่าเริ่มต้น, เปิดสาธารณะแค่ 22/80/443 และอนุญาตทุก port ระหว่าง node
-  (ดึง IP จาก inventory ด้วย `map('extract', hostvars, 'ansible_host')`) ทดสอบบน VM
-  ก่อน แล้ว rollout บน prd ด้วย `--check --diff` โดยเปิด Console ของผู้ให้บริการและ
-  SSH session สำรองไว้ จากนั้นยืนยันว่า SSH ใหม่, เว็บ, node, pod และ monitoring
-  ยังทำงาน และ port ภายในเข้าจากข้างนอกไม่ได้แล้ว — ระหว่างเตรียมการใช้ตัวแปร
-  `manage_ufw` ข้าม firewall บน prd ไว้ก่อน (ต้องใช้ `| bool` เพราะค่าจาก inventory
-  แบบ ini เป็น string และ `"false"` ถือเป็นจริง)
-- **ปิด SSH password โดยไม่ล็อกตัวเองออก** — ค่าที่ตั้งใน `sshd_config` อาจไม่มีผล
-  เพราะ cloud image มี `sshd_config.d/50-cloud-init.conf` ที่เปิด password ไว้ และ sshd
-  ใช้ค่าที่เจอก่อน จึงวาง config เป็น `00-hardening.conf` ให้ถูกอ่านก่อน ส่วน
-  `PermitRootLogin no` จะตัด Ansible ออกจาก prd (เชื่อมต่อด้วย root) จึงใช้
-  `prohibit-password` แทน ก่อน rollout ทดสอบ login ด้วย key แบบบังคับปิด password
-  ทุกเครื่อง และหลัง rollout ยืนยันว่า login ด้วย password ถูกปฏิเสธ
-  (`Permission denied (publickey)`)
-- **Config ถูกตาม doc ของ Alertmanager แต่ operator ไม่ยอมรับ** — ใช้
-  `webhook_url_file` เพื่ออ่าน Discord URL จาก Secret แต่หลัง `helm upgrade` pod ของ
-  Alertmanager ไม่ถูกสร้างใหม่ ไล่จาก resource → StatefulSet → pod แล้วดู
-  `status.conditions` (`ReconciliationFailed`) กับ log ของ Prometheus Operator พบว่า
-  operator v0.91 ไม่รู้จัก field นี้จึงไม่ apply config เลย (pod เดิมยังทำงานด้วย config
-  เก่า ไม่มี downtime) แก้โดยใช้ `webhook_url` และแยก receivers ที่มี URL ไว้ในไฟล์
-  values อีกไฟล์ที่ไม่ commit แล้วส่งให้ Helm ด้วย `-f` 2 ไฟล์
-- **ServiceMonitor/PrometheusRule ที่ Prometheus มองไม่เห็น** — kube-prometheus-stack
-  เลือกเฉพาะ resource ที่มี label `release: <ชื่อ release>` ถ้าไม่ใส่จะไม่มี error
-  แต่ไม่มี metrics/rule จึงใส่ label นี้ทั้งใน values ของ cert-manager และใน
-  PrometheusRule แล้วยืนยันใน Grafana ว่า metric และ rule ถูกโหลดจริง
-
----
-
-## สิ่งที่จะพัฒนาต่อ (Future Improvements)
-
-- [ ] **ใช้ user ปกติ + sudo แทน root บน prd** แล้วปิด root login (`PermitRootLogin no`)
-- [ ] **ตรวจ drift อัตโนมัติ** — รัน `--check --diff` กับ prd ตามรอบเวลาแล้วแจ้งเตือนเมื่อมี `changed`
-- [ ] **ติดตั้ง Helm charts และ runner ด้วย Ansible** (monitoring, cert-manager, ClusterIssuer, alert rules) เก็บ webhook URL ด้วย Ansible Vault
-- [ ] **Pin GitHub Actions ด้วย commit SHA** และให้ Dependabot อัปเดตให้อัตโนมัติ
-- [ ] **Approval gate ก่อน promote/deploy prd** ด้วย required reviewers ของ GitHub Environments
-- [ ] **Smoke test ใน CI** — รัน container จริงแล้วเรียก endpoint ก่อน deploy
-- [ ] **Validate manifest ใน CI** (kubeconform)
-- [ ] **Application-level metrics** เปิดที่ `/metrics` ให้ Prometheus เก็บ
-- [ ] **Custom domain** แทน nip.io
+> ก่อน apply จริง ส่วน Helm charts ที่เคยติดตั้งด้วยมือถูกเก็บ values ไว้ใน git ตั้งแต่แรก
+> playbook จึงรับมาดูแลต่อได้โดยไม่มีการเปลี่ยนแปลง ปัจจุบัน prd ถูกจัดการด้วย playbook
+> ชุดเดียวกันทั้งหมด (รันซ้ำได้ `changed=0`)
 
 ---
 

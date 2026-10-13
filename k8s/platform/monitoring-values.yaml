@@ -15,4 +15,3 @@ alertmanager:
         - receiver: discord
           matchers:
             - alertname =~ "Certificate.*"
-    # receivers อยู่ใน alertmanager-discord-values.yaml (มี webhook URL ห้าม commit)
