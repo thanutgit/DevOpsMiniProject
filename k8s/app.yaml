@@ -79,8 +79,3 @@ spec:
     - port: 3020
       targetPort: 3010
   type: ClusterIP
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: monitoring
