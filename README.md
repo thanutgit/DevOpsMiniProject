@@ -94,7 +94,7 @@ flowchart LR
 | **Language / Framework** | Go 1.26, Fiber v3, GORM |
 | **Containerization** | Docker (multi-stage build บน alpine), GitHub Container Registry (GHCR) |
 | **Orchestration** | Kubernetes (k3s), Traefik Ingress, Helm |
-| **Infrastructure as Code** | Ansible (roles: common, k3s_server, k3s_agent, platform), Ansible Vault |
+| **Infrastructure as Code** | Ansible (roles: common, k3s_server, k3s_agent, platform, github_runner), Ansible Vault |
 | **TLS** | cert-manager, Let's Encrypt (HTTP-01) |
 | **Security** | Trivy (scan repo + image), Kubernetes securityContext (non-root, read-only filesystem) |
 | **CI/CD** | GitHub Actions, self-hosted runners, GitHub Environments |
@@ -123,6 +123,15 @@ flowchart LR
   บนดิสก์ เปิด/ปิด cert-manager ต่อ environment ได้ และ pin collection ไว้ใน
   `requirements.yaml` นำมาครอบ prd ที่เคยติดตั้งด้วยมือได้ด้วย `--check --diff` ที่ผล
   เป็น `ok` ทั้งหมด (ของจริงตรงกับ repo ทุกอย่าง ไม่มี upgrade ซ้ำ)
+- **ตรวจ drift ระดับ manifest ด้วย helm-diff** — Ansible เทียบ manifest ที่ render จริง
+  กับ release ใน cluster แทนการเทียบแค่ values รันซ้ำได้ `changed=0` ทั้ง 2 environment
+  (กำหนด Grafana admin password จาก Vault แทนการสุ่มของ chart ซึ่งทำให้ diff ทุกรอบ)
+  และเมื่อ release เปลี่ยน จะ sync รหัสลงฐานข้อมูลของ Grafana ให้อัตโนมัติ
+- **CI runner เป็น code และไม่ใช้ root** — role `github_runner` ติดตั้ง GitHub Actions
+  self-hosted runner ให้รันด้วย user `gha-runner` (ไม่ใช่ root) ตรวจ tarball ด้วย sha256
+  ขอ registration token ผ่าน GitHub API ด้วย fine-grained PAT ที่เก็บใน Vault และให้
+  kubeconfig ของตัวเองผ่าน `.env` ของ runner — ย้าย runner บน prd ที่เคยรันเป็น root
+  มาใช้ role นี้ และย้าย dev มารันบน cluster ที่สร้างจาก playbook เดียวกับ prd
 - **Supply chain ของสคริปต์ติดตั้ง** — สคริปต์ติดตั้ง k3s ถูกตรวจด้วย sha256 ที่ pin
   ไว้คู่กับ `k3s_version` ถ้าสคริปต์ถูกแก้จะไม่ถูกรันด้วย root
 - **SSH keys เป็น code** — public key ของทุกเครื่องที่เข้าได้อยู่ใน repo และถูกใส่ด้วย
@@ -281,20 +290,22 @@ flowchart LR
 
 1. เตรียมเครื่อง Ubuntu 24.04 ที่มี **IP คงที่** และ SSH ด้วย key ได้ แล้วใส่ใน
    `ansible/inventory.ini`
-2. สร้างไฟล์ secret ด้วย Ansible Vault (ใส่ `discord_webhook_url`) และติดตั้ง collection:
+2. สร้างไฟล์ secret ด้วย Ansible Vault (ใส่ `discord_webhook_url`, `grafana_admin_password`
+   และ `github_runner_pat` — fine-grained PAT เฉพาะ repo นี้ สิทธิ์ Administration: Read and write)
+   และติดตั้ง collection:
    ```bash
    cd ansible
    ansible-galaxy collection install -r requirements.yaml
    ansible-vault create secrets/vm.yaml
    ```
-3. สร้าง cluster และ platform ทั้งหมดในคำสั่งเดียว (OS, firewall, k3s server + agent,
-   helm, kube-prometheus-stack, cert-manager, ClusterIssuer, alert rules):
+3. สร้าง cluster, platform และ CI runner ทั้งหมดในคำสั่งเดียว (OS, firewall, k3s server
+   + agent, helm, kube-prometheus-stack, cert-manager, ClusterIssuer, alert rules,
+   GitHub Actions runner ที่มี label ตาม `github_runner_name` ใน inventory):
    ```bash
    ansible-playbook site.yaml -K --ask-vault-pass
    # prd: ansible-playbook -i inventory-prd.ini site.yaml --ask-vault-pass --check --diff
    ```
-4. ติดตั้ง self-hosted runner บน node ที่มี kubeconfig และตั้ง label ตาม environment
-5. ถ้าผู้ให้บริการมี firewall ภายนอก ให้เปิด port 22, 80 และ 443 (firewall ของ OS
+4. ถ้าผู้ให้บริการมี firewall ภายนอก ให้เปิด port 22, 80 และ 443 (firewall ของ OS
    จัดการโดย Ansible แล้ว — เปิดสาธารณะแค่ 3 port นี้ และให้ node คุยกันได้ทุก port)
 
 > cluster prd ถูกตั้งด้วยมือก่อนมี playbook ขั้นตอนที่ทำมือและปัญหาที่เจอ
