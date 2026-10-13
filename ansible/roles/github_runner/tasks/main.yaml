@@ -103,22 +103,27 @@
         chdir: "{{ github_runner_dir }}"
         creates: "{{ github_runner_dir }}/.service"
 
-- name: Point jobs at the runner kubeconfig
-  ansible.builtin.lineinfile:
-    path: "{{ github_runner_dir }}/.env"
-    regexp: '^KUBECONFIG='
-    line: "KUBECONFIG=/home/{{ github_runner_user }}/.kube/config"
-    owner: "{{ github_runner_user }}"
-    group: "{{ github_runner_user }}"
-  register: runner_env
+- name: Configure and start runner service
+  # check mode บนเครื่องใหม่: ยังไม่มี .env/.service เพราะไม่ได้ติดตั้งจริง → ข้าม
+  when: runner_registered.stat.exists or not ansible_check_mode
+  block:
+    - name: Point jobs at the runner kubeconfig
+      ansible.builtin.lineinfile:
+        path: "{{ github_runner_dir }}/.env"
+        regexp: '^KUBECONFIG='
+        line: "KUBECONFIG=/home/{{ github_runner_user }}/.kube/config"
+        owner: "{{ github_runner_user }}"
+        group: "{{ github_runner_user }}"
+      register: runner_env
 
-- name: Read runner service name
-  ansible.builtin.slurp:
-    src: "{{ github_runner_dir }}/.service"
-  register: runner_service
+    - name: Read runner service name
+      ansible.builtin.slurp:
+        src: "{{ github_runner_dir }}/.service"
+      register: runner_service
 
-- name: Ensure runner service is running
-  ansible.builtin.systemd:
-    name: "{{ runner_service.content | b64decode | trim }}"
-    state: "{{ 'restarted' if runner_env is changed else 'started' }}"
-    enabled: true
+    - name: Ensure runner service is running
+      ansible.builtin.systemd:
+        name: "{{ runner_service.content | b64decode | trim }}"
+        state: "{{ 'restarted' if runner_env is changed else 'started' }}"
+        enabled: true
+
