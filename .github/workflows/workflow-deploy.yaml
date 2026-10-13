@@ -24,9 +24,6 @@ jobs:
   Deploy:
     runs-on: ${{ github.event.inputs.environment == 'dev' && 'VirtualBox' || 'VPS' }}
     environment: ${{ github.event.inputs.environment }}
-    env:
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-
     steps:
       - uses: actions/checkout@v4
 

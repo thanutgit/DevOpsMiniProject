@@ -15,3 +15,5 @@ alertmanager:
         - receiver: discord
           matchers:
             - alertname =~ "Certificate.*"
+# receivers + grafana.adminPassword ถูกเพิ่มโดย Ansible role platform
+# (ค่าอยู่ใน ansible/secrets/<env>.yaml เข้ารหัสด้วย Vault)
