@@ -1,0 +1,8 @@
+github_repo: thanutgit/DevOpsMiniProject
+github_runner_version: "2.337.0"          # ใช้แค่ตอนติดตั้งครั้งแรก หลังจากนั้น runner auto-update เอง
+github_runner_sha256: "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
+github_runner_user: gha-runner
+github_runner_dir: /opt/actions-runner
+github_runner_name: "{{ inventory_hostname }}"
+github_runner_labels: "{{ github_runner_name }}"
+kubeconfig_path: /etc/rancher/k3s/k3s.yaml
