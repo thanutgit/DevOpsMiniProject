@@ -18,3 +18,8 @@
   become: true
   roles:
     - platform
+- name: GitHub Actions runner
+  hosts: master
+  become: true
+  roles:
+    - github_runner

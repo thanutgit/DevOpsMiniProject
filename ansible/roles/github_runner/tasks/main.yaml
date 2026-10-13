@@ -1,0 +1,124 @@
+- name: Load secrets for {{ env_name }}
+  ansible.builtin.include_vars: "{{ playbook_dir }}/secrets/{{ env_name }}.yaml"
+  no_log: true
+
+- name: Install acl (needed for become_user to an unprivileged user)
+  ansible.builtin.apt:
+    name: acl
+    state: present
+
+- name: Create runner user
+  ansible.builtin.user:
+    name: "{{ github_runner_user }}"
+    system: true
+    shell: /bin/bash
+    create_home: true
+
+- name: Create runner directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    mode: '0700'
+  loop:
+    - "{{ github_runner_dir }}"
+    - "/home/{{ github_runner_user }}/.kube"
+
+- name: Give runner a kubeconfig
+  ansible.builtin.copy:
+    src: "{{ kubeconfig_path }}"
+    dest: "/home/{{ github_runner_user }}/.kube/config"
+    remote_src: true
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    mode: '0600'
+
+- name: Check if runner is already registered
+  ansible.builtin.stat:
+    path: "{{ github_runner_dir }}/.runner"
+  register: runner_registered
+
+- name: Install and register runner
+  when: not runner_registered.stat.exists
+  block:
+    - name: Download runner {{ github_runner_version }}
+      ansible.builtin.get_url:
+        url: "https://github.com/actions/runner/releases/download/v{{ github_runner_version }}/actions-runner-linux-x64-{{ github_runner_version }}.tar.gz"
+        dest: /tmp/actions-runner.tar.gz
+        checksum: "sha256:{{ github_runner_sha256 }}"
+
+    - name: Extract runner
+      ansible.builtin.unarchive:
+        src: /tmp/actions-runner.tar.gz
+        dest: "{{ github_runner_dir }}"
+        remote_src: true
+        owner: "{{ github_runner_user }}"
+        group: "{{ github_runner_user }}"
+      
+    - name: Restore runner directory permissions (tarball sets 0755)
+      ansible.builtin.file:
+        path: "{{ github_runner_dir }}"
+        state: directory
+        mode: '0700'
+
+    - name: Install runner OS dependencies
+      ansible.builtin.command: "{{ github_runner_dir }}/bin/installdependencies.sh"
+
+    - name: Request registration token from GitHub
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ github_repo }}/actions/runners/registration-token"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ github_runner_pat }}"
+          Accept: application/vnd.github+json
+          X-GitHub-Api-Version: "2022-11-28"
+        status_code: 201
+      register: runner_token
+      no_log: true
+
+    - name: Register runner
+      ansible.builtin.command:
+        argv:
+          - ./config.sh
+          - --unattended
+          - --url
+          - "https://github.com/{{ github_repo }}"
+          - --token
+          - "{{ runner_token.json.token }}"
+          - --name
+          - "{{ github_runner_name }}"
+          - --labels
+          - "{{ github_runner_labels }}"
+          - --work
+          - _work
+          - --replace
+        chdir: "{{ github_runner_dir }}"
+      become_user: "{{ github_runner_user }}"
+      no_log: true
+
+    - name: Install runner as systemd service
+      ansible.builtin.command: "./svc.sh install {{ github_runner_user }}"
+      args:
+        chdir: "{{ github_runner_dir }}"
+        creates: "{{ github_runner_dir }}/.service"
+
+- name: Point jobs at the runner kubeconfig
+  ansible.builtin.lineinfile:
+    path: "{{ github_runner_dir }}/.env"
+    regexp: '^KUBECONFIG='
+    line: "KUBECONFIG=/home/{{ github_runner_user }}/.kube/config"
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+  register: runner_env
+
+- name: Read runner service name
+  ansible.builtin.slurp:
+    src: "{{ github_runner_dir }}/.service"
+  register: runner_service
+
+- name: Ensure runner service is running
+  ansible.builtin.systemd:
+    name: "{{ runner_service.content | b64decode | trim }}"
+    state: "{{ 'restarted' if runner_env is changed else 'started' }}"
+    enabled: true
