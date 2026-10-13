@@ -28,6 +28,12 @@
         mode: '0755'
         remote_src: true
 
+- name: Install helm-diff plugin
+  kubernetes.core.helm_plugin:
+    plugin_path: https://github.com/databus23/helm-diff
+    plugin_version: "{{ helm_diff_version }}"
+    state: present
+
 - name: Add helm repositories
   kubernetes.core.helm_repository:
     name: "{{ item.name }}"
@@ -49,10 +55,35 @@
     create_namespace: true
     kubeconfig: "{{ kubeconfig_path }}"
     values: >-
-      {{ lookup('file', platform_dir + '/monitoring-values.yaml') | from_yaml
-         | combine(alertmanager_receivers, recursive=true) }}
+      {{ lookup('file', platform_dir + '/monitoring-values.yaml') | from_yaml 
+         | combine(alertmanager_receivers, grafana_secret_values, recursive=true) }}
     wait: true
     timeout: 10m0s
+  no_log: true
+  register: monitoring_release
+
+- name: Sync Grafana admin password into Grafana DB
+  # Grafana อ่านรหัสจาก Secret แค่ตอนสร้าง DB ครั้งแรก
+  # ถ้า Helm release เปลี่ยน ให้ reset รหัสใน DB ให้ตรงกับ Vault เสมอ
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig={{ kubeconfig_path }}
+      - exec
+      - -i
+      - -n
+      - monitoring
+      - deploy/monitoring-grafana
+      - -c
+      - grafana
+      - --
+      - grafana
+      - cli
+      - admin
+      - reset-admin-password
+      - --password-from-stdin
+    stdin: "{{ grafana_admin_password }}"
+  when: monitoring_release is changed
   no_log: true
 
 - name: Install cert-manager

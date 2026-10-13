@@ -1,6 +1,7 @@
 helm_version: v3.21.1
 helm_arch: amd64
 kubeconfig_path: /etc/rancher/k3s/k3s.yaml
+helm_diff_version: v3.15.15
 
 # ไฟล์ values/manifest อ่านจาก repo บนเครื่อง controller (WSL)
 platform_dir: "{{ playbook_dir }}/../k8s/platform"
@@ -20,3 +21,7 @@ alertmanager_receivers:
           discord_configs:
             - webhook_url: "{{ discord_webhook_url }}"
               send_resolved: true
+
+grafana_secret_values:
+  grafana:
+    adminPassword: "{{ grafana_admin_password }}"
