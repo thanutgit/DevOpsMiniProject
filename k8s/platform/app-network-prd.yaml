@@ -1,5 +1,19 @@
-# Prd (VPS, public IP) — HTTPS ด้วย cert-manager + Let's Encrypt
-# เริ่มด้วย letsencrypt-staging ก่อน ผ่านแล้วค่อยเปลี่ยนเป็น letsencrypt-prod
+# การ expose แอปบน prd — ดูแลโดย platform (Ansible) เพื่อให้ CI ไม่มีสิทธิ์แตะ routing
+# (Ingress ใช้ Traefik ร่วมกันทั้ง cluster → ถ้า CI สร้าง Ingress ได้ จะดัก path ของ namespace อื่นได้)
+# HTTPS ด้วย cert-manager + Let's Encrypt และ redirect HTTP → HTTPS
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: devops-project
+spec:
+  selector:
+    app: devops-project
+  ports:
+    - port: 3020
+      targetPort: 3010
+  type: ClusterIP
+---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
