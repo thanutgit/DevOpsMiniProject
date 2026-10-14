@@ -112,7 +112,7 @@
     kubeconfig: "{{ kubeconfig_path }}"
     definition: "{{ lookup('file', platform_dir + '/cert-alerts.yaml') | from_yaml_all | list }}"
 
-- name: Apply app namespace, deployer RBAC and Grafana ingress
+- name: Apply app namespace, deployer RBAC, app routing and Grafana ingress
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ kubeconfig_path }}"
@@ -120,4 +120,5 @@
   loop:
     - app-namespace.yaml              # ต้องมาก่อน RBAC (RBAC อยู่ใน namespace นี้)
     - deployer-rbac.yaml
+    - "app-network-{{ env_name }}.yaml"
     - "grafana-ingress-{{ env_name }}.yaml"
