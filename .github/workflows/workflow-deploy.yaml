@@ -35,7 +35,6 @@ jobs:
         run : |
           set -e
           cd k8s
-          kubectl apply -f namespace.yaml
           kubectl create secret generic devops-project-secret \
             --namespace devops-project \
             --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
@@ -52,4 +51,3 @@ jobs:
           kubectl rollout restart deployment/app-api -n devops-project
           kubectl rollout status deployment/app-api -n devops-project --timeout=10m
           kubectl apply -f hpa.yaml
-          kubectl apply -f ingress-${{ github.event.inputs.environment }}.yaml
