@@ -55,8 +55,8 @@
     create_namespace: true
     kubeconfig: "{{ kubeconfig_path }}"
     values: >-
-      {{ lookup('file', platform_dir + '/monitoring-values.yaml') | from_yaml 
-         | combine(alertmanager_receivers, grafana_secret_values, recursive=true) }}
+      {{ lookup('file', platform_dir + '/monitoring-values.yaml') | from_yaml
+         | combine(alertmanager_receivers, grafana_secret_values, grafana_env_values, recursive=true) }}
     wait: true
     timeout: 10m0s
   no_log: true

@@ -25,3 +25,8 @@ alertmanager_receivers:
 grafana_secret_values:
   grafana:
     adminPassword: "{{ grafana_admin_password }}"
+
+grafana_env_values:
+  grafana:
+    env:
+      GF_SERVER_ROOT_URL: "{{ grafana_root_url }}"

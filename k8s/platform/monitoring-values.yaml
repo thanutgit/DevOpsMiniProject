@@ -1,6 +1,6 @@
 grafana:
   env:
-    GF_SERVER_ROOT_URL: https://45.150.128.180.nip.io/grafana
+    # GF_SERVER_ROOT_URL แยกต่อ env — ตั้งจาก grafana_root_url ใน inventory (Ansible role platform)
     GF_SERVER_SERVE_FROM_SUB_PATH: true
 
 alertmanager:
