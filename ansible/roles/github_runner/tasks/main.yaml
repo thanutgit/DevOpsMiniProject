@@ -25,15 +25,51 @@
     - "{{ github_runner_dir }}"
     - "/home/{{ github_runner_user }}/.kube"
 
-- name: Give runner a kubeconfig
-  ansible.builtin.copy:
+- name: Read cluster CA and API server from k3s kubeconfig
+  ansible.builtin.slurp:
     src: "{{ kubeconfig_path }}"
+  register: admin_kubeconfig
+  no_log: true
+
+- name: Read deployer ServiceAccount token
+  kubernetes.core.k8s_info:
+    kind: Secret
+    name: deployer-token
+    namespace: devops-project
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: deployer_secret
+  no_log: true
+
+- name: Write runner kubeconfig (ServiceAccount deployer, devops-project only)
+  ansible.builtin.copy:
     dest: "/home/{{ github_runner_user }}/.kube/config"
-    remote_src: true
     owner: "{{ github_runner_user }}"
     group: "{{ github_runner_user }}"
     mode: '0600'
-
+    content: "{{ runner_kubeconfig | to_nice_yaml }}"
+  vars:
+    _admin: "{{ admin_kubeconfig.content | b64decode | from_yaml }}"
+    runner_kubeconfig:
+      apiVersion: v1
+      kind: Config
+      clusters:
+        - name: k3s
+          cluster:
+            server: "{{ _admin.clusters[0].cluster.server }}"
+            certificate-authority-data: "{{ _admin.clusters[0].cluster['certificate-authority-data'] }}"
+      users:
+        - name: deployer
+          user:
+            token: "{{ deployer_secret.resources[0].data.token | b64decode }}"
+      contexts:
+        - name: deployer
+          context:
+            cluster: k3s
+            user: deployer
+            namespace: devops-project
+      current-context: deployer
+  no_log: true
+  
 - name: Check if runner is already registered
   ansible.builtin.stat:
     path: "{{ github_runner_dir }}/.runner"
