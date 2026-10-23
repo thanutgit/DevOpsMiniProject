@@ -1,4 +1,4 @@
-package service_status_home
+package statushome
 
 import (
 	"fmt"
@@ -9,7 +9,6 @@ import (
 	"DevOpsMiniProject/repository"
 
 	"github.com/gofiber/fiber/v3"
-	"gorm.io/gorm"
 )
 
 type StatusHome interface {
@@ -17,7 +16,6 @@ type StatusHome interface {
 }
 
 type statusHome struct {
-	db             *gorm.DB
 	userRepository repository.UserRepository
 }
 
@@ -63,9 +61,6 @@ func (s statusHome) GetAllInfo(c fiber.Ctx) error {
 	return c.SendString(output)
 }
 
-func ProvideHomeService(db *gorm.DB) StatusHome {
-	return &statusHome{
-		db:             db,
-		userRepository: repository.ProvideUserRepository(db),
-	}
+func ProvideHomeService(repo repository.UserRepository) StatusHome {
+	return &statusHome{userRepository: repo}
 }

@@ -1,4 +1,4 @@
-package service_healthz
+package healthz
 
 import (
 	"io"

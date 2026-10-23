@@ -1,10 +1,9 @@
-package user_service
+package user
 
 import (
 	"DevOpsMiniProject/repository"
 
 	"github.com/gofiber/fiber/v3"
-	"gorm.io/gorm"
 )
 
 type UserService interface {
@@ -14,13 +13,9 @@ type UserService interface {
 }
 
 type userService struct {
-	db             *gorm.DB
 	userRepository repository.UserRepository
 }
 
-func ProvideUserService(db *gorm.DB) UserService {
-	return &userService{
-		db:             db,
-		userRepository: repository.ProvideUserRepository(db),
-	}
+func ProvideUserService(repo repository.UserRepository) UserService {
+	return &userService{userRepository: repo}
 }

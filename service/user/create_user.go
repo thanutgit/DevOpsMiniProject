@@ -1,10 +1,13 @@
-package user_service
+package user
 
 import (
 	"DevOpsMiniProject/entity"
 	"DevOpsMiniProject/util"
+	"errors"
+	"log"
 
 	"github.com/gofiber/fiber/v3"
+	"gorm.io/gorm"
 )
 
 type CreateUserRequest struct {
@@ -18,7 +21,7 @@ func (u userService) HandleCreateUser(c fiber.Ctx) error {
 
 	err := util.ValidateRequest(c, &request)
 	if err != nil {
-		return err
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 
 	createdUser, err := u.userRepository.CreateUser(entity.User{
@@ -26,9 +29,13 @@ func (u userService) HandleCreateUser(c fiber.Ctx) error {
 		Name:     request.Name,
 		Age:      request.Age,
 	})
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return fiber.NewError(fiber.StatusConflict, "username already exists") // 409
+	}
 	if err != nil {
-		return err
+		log.Printf("create user failed: %v", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "internal error") // 500 อื่น ๆ
 	}
 
-	return c.Status(fiber.StatusOK).JSON(createdUser)
+	return c.Status(fiber.StatusCreated).JSON(createdUser)
 }

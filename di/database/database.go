@@ -9,11 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func InitDatabase() (*gorm.DB, error) {
-	cfg := config.GetConfig()
-
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local", cfg.Database.User, cfg.Database.Pass, cfg.Database.Host, cfg.Database.Port, cfg.Database.DBName)
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+func InitDatabase(cfg *config.DatabaseConfig) (*gorm.DB, error) {
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local", cfg.User, cfg.Pass, cfg.Host, cfg.Port, cfg.DBName)
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		TranslateError: true,
+	})
 	if err != nil {
 		return nil, err
 	}
