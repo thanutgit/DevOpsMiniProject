@@ -55,8 +55,8 @@
     create_namespace: true
     kubeconfig: "{{ kubeconfig_path }}"
     values: >-
-      {{ lookup('file', platform_dir + '/monitoring-values.yaml') | from_yaml 
-         | combine(alertmanager_receivers, grafana_secret_values, recursive=true) }}
+      {{ lookup('file', platform_dir + '/monitoring-values.yaml') | from_yaml
+         | combine(alertmanager_receivers, grafana_secret_values, grafana_env_values, recursive=true) }}
     wait: true
     timeout: 10m0s
   no_log: true
@@ -111,3 +111,14 @@
     state: present
     kubeconfig: "{{ kubeconfig_path }}"
     definition: "{{ lookup('file', platform_dir + '/cert-alerts.yaml') | from_yaml_all | list }}"
+
+- name: Apply app namespace, deployer RBAC, app routing and Grafana ingress
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition: "{{ lookup('file', platform_dir + '/' + item) | from_yaml_all | list }}"
+  loop:
+    - app-namespace.yaml              # ต้องมาก่อน RBAC (RBAC อยู่ใน namespace นี้)
+    - deployer-rbac.yaml
+    - "app-network-{{ env_name }}.yaml"
+    - "grafana-ingress-{{ env_name }}.yaml"

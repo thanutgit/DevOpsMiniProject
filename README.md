@@ -127,6 +127,15 @@ flowchart LR
   กับ release ใน cluster แทนการเทียบแค่ values รันซ้ำได้ `changed=0` ทั้ง 2 environment
   (กำหนด Grafana admin password จาก Vault แทนการสุ่มของ chart ซึ่งทำให้ diff ทุกรอบ)
   และเมื่อ release เปลี่ยน จะ sync รหัสลงฐานข้อมูลของ Grafana ให้อัตโนมัติ
+- **CI ได้สิทธิ์เท่าที่จำเป็น (least privilege)** — runner deploy ด้วย ServiceAccount
+  `deployer` ที่มี Role เฉพาะใน namespace `devops-project` และเฉพาะ resource ที่ workflow
+  ใช้จริง (Secret ของแอปจำกัดด้วย `resourceNames` จึงอ่าน TLS key ไม่ได้) ไม่มีสิทธิ์ระดับ
+  cluster, แตะ namespace อื่นไม่ได้ และไม่มีสิทธิ์แก้ routing (Service/Ingress) เพราะ
+  Traefik ใช้ร่วมกันทั้ง cluster — Trivy (KSV-0056) จับได้ว่าถ้า CI สร้าง Ingress ได้จะดัก
+  path ของ namespace อื่นได้ จึงย้ายการ expose ไปให้ platform ดูแลแทนการ ignore
+  namespace เปิด **Pod Security Admission `restricted`** ปฏิเสธ privileged pod แม้ผู้สั่ง
+  จะเป็น admin ทดสอบสองทาง: deploy ผ่าน (สิทธิ์พอ) และคำสั่งนอกขอบเขตได้ `Forbidden`
+  (สิทธิ์ไม่เกิน) — Role ถูกสร้างโดย Ansible ไม่ใช่ CI จึงแก้สิทธิ์ตัวเองไม่ได้
 - **CI runner เป็น code และไม่ใช้ root** — role `github_runner` ติดตั้ง GitHub Actions
   self-hosted runner ให้รันด้วย user `gha-runner` (ไม่ใช่ root) ตรวจ tarball ด้วย sha256
   ขอ registration token ผ่าน GitHub API ด้วย fine-grained PAT ที่เก็บใน Vault และให้
@@ -170,8 +179,10 @@ flowchart LR
 - **Unit tests แบบ table-driven** รันใน CI ก่อน merge ทุกครั้ง
 - **การแยก config ตาม environment** — secret แยกผ่าน GitHub Environments,
   ConfigMap และ Ingress แยกไฟล์ต่อ environment
-- **แยก platform กับ application** — ของที่ตั้งครั้งเดียวต่อ cluster (`k8s/platform/`)
-  แยกจาก manifest ที่ deploy ทุก release
+- **แยก platform กับ application** — Ansible ดูแลของที่ตั้งครั้งเดียวต่อ cluster
+  (`k8s/platform/`: namespace + Pod Security, RBAC ของ CI, Service/Ingress ของแอป,
+  monitoring, cert-manager) ส่วน CI deploy เฉพาะ workload ที่เปลี่ยนทุก release
+  (Secret, ConfigMap, migration Job, Deployment, HPA)
 - **Monitoring stack** — Prometheus + Grafana ติดตั้งผ่าน Helm เปิดที่ `/grafana`
 - **Alert เมื่อ certificate ใกล้หมดอายุ** — ให้ Prometheus เก็บ metrics ของ cert-manager
   ผ่าน ServiceMonitor แล้วเขียน `PrometheusRule` 2 ตัว: เตือนเมื่อ cert เหลือน้อยกว่า
