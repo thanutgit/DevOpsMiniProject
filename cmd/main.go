@@ -10,14 +10,14 @@ import (
 
 func main() {
 	cfg := config.GetConfig()
-	db, err := database.InitDatabase()
+	db, err := database.InitDatabase(&cfg.Database)
 	if err != nil {
 		log.Panic(err.Error())
 		panic(err)
 	}
 
 	if cfg.Server.Service == "server" {
-		err := server.InitApiServer(db)
+		err := server.InitApiServer(db, &cfg)
 		if err != nil {
 			log.Panic(err.Error())
 			panic(err)

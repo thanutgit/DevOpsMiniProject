@@ -1,48 +1,94 @@
-package service_healthz
+package healthz
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"DevOpsMiniProject/entity"
 
 	"github.com/gofiber/fiber/v3"
 )
 
-// func TestHandleHealthCheck(t *testing.T) {
-// 	// สร้าง mock ของ HealthzService โดยไม่ต้องเชื่อมต่อฐานข้อมูลจริง
-// 	mockService := &healthzService{
-// 		db: nil, // ไม่ต้องใช้ฐานข้อมูลจริงใน test นี้
-// 	}
+type fakeRepo struct {
+	pingErr error
+	hang    bool
+}
 
-// 	got := mockService.HandleHealthCheck(nil) // ส่ง nil เป็น context เพราะเราไม่ใช้จริงใน test นี้
-// 	if !strings.Contains(got.Error(), "unhealthy") && !strings.Contains(got.Error(), "ok") {
-// 		t.Errorf("HandleHealthCheck() = %q, ต้องมี 'unhealthy' หรือ 'ok' อยู่ในผลลัพธ์", got.Error())
-// 	}
-// }
+func (f fakeRepo) PingDB(ctx context.Context) error {
+	if f.hang {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return f.pingErr
+}
+func (fakeRepo) CreateUser(u entity.User) (entity.User, error) { return u, nil }
+func (fakeRepo) DeleteUser(string) error                       { return nil }
+func (fakeRepo) GetAllUser() ([]entity.User, error)            { return nil, nil }
+
+func doRequest(t *testing.T, repo fakeRepo, path string) (int, string, time.Duration) {
+	t.Helper()
+
+	app := fiber.New()
+	svc := ProvideHealthzService(repo)
+	app.Get("/livez", svc.HandleLiveCheck)
+	app.Get("/readyz", svc.HandleHealthCheck)
+
+	req := httptest.NewRequest("GET", path, nil)
+
+	start := time.Now()
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: 3 * time.Second})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b), elapsed
+}
 
 func TestHandleLiveCheck(t *testing.T) {
-	app := fiber.New()
-	svc := ProvideHealthzService(nil) // ส่ง nil เป็น db เพราะเราไม่ใช้จริงใน test นี้
-	app.Get("/livez", svc.HandleLiveCheck)
+	status, body, _ := doRequest(t, fakeRepo{pingErr: errors.New("db down")}, "/livez")
 
-	req := httptest.NewRequest("GET", "/livez", nil)
-	reps, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("เกิดข้อผิดพลาดในการทดสอบ: %v", err)
+	if status != fiber.StatusOK {
+		t.Errorf("status = %d, want 200", status)
 	}
-	defer reps.Body.Close()
+	if !strings.Contains(body, "alive") {
+		t.Errorf("body = %q, want contains %q", body, "alive")
+	}
+}
 
-	body, err := io.ReadAll(reps.Body)
-	if err != nil {
-		t.Fatalf("เกิดข้อผิดพลาดในการทดสอบ: %v", err)
+func TestHandleHealthCheck(t *testing.T) {
+	tests := []struct {
+		name       string
+		repo       fakeRepo
+		wantStatus int
+		wantBody   string
+		maxTime    time.Duration
+	}{
+		{"DB ปกติ", fakeRepo{}, fiber.StatusOK, `"database":"ok"`, 0},
+		{"DB ต่อไม่ได้", fakeRepo{pingErr: errors.New("connection refused")}, fiber.StatusServiceUnavailable, `"database":"fail"`, 0},
+		{"DB ค้าง ต้องตัดที่ ~800ms", fakeRepo{hang: true}, fiber.StatusServiceUnavailable, `"database":"fail"`, 950 * time.Millisecond},
 	}
 
-	if reps.StatusCode != 200 {
-		t.Errorf("HandleLiveCheck() = %d, ต้องเป็น 200", reps.StatusCode)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, body, elapsed := doRequest(t, tt.repo, "/readyz")
 
-	if !strings.Contains(string(body), "alive") {
-		t.Errorf("HandleLiveCheck() = %q, ต้องมี 'alive' อยู่ในผลลัพธ์", string(body))
+			if status != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body: %s)", status, tt.wantStatus, body)
+			}
+			if !strings.Contains(body, tt.wantBody) {
+				t.Errorf("body = %q, want contains %q", body, tt.wantBody)
+			}
+			if tt.maxTime > 0 && elapsed > tt.maxTime {
+				t.Errorf("took %v, want <= %v (timeout ไม่ทำงาน?)", elapsed, tt.maxTime)
+			}
+		})
 	}
 }

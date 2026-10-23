@@ -2,16 +2,20 @@ package repository
 
 import (
 	"DevOpsMiniProject/entity"
+	"context"
+	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
 )
 
+var ErrUserNotFound = errors.New("user not found")
+
 type UserRepository interface {
 	CreateUser(ent entity.User) (entity.User, error)
-	DeleteUser(req string) error
+	DeleteUser(username string) error
 	GetAllUser() ([]entity.User, error)
-	GetStatusDB() string
+	PingDB(ctx context.Context) error
 }
 
 type userRepository struct {
@@ -26,10 +30,13 @@ func (u userRepository) CreateUser(ent entity.User) (entity.User, error) {
 	return ent, nil
 }
 
-func (u userRepository) DeleteUser(req string) error {
-	result := u.db.Delete(entity.User{}, "username = ?", req)
+func (u userRepository) DeleteUser(username string) error {
+	result := u.db.Delete(entity.User{}, "username = ?", username)
 	if result.Error != nil {
 		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
 	}
 
 	return nil
@@ -45,13 +52,12 @@ func (u userRepository) GetAllUser() ([]entity.User, error) {
 	return users, nil
 }
 
-func (u userRepository) GetStatusDB() string {
+func (u userRepository) PingDB(ctx context.Context) error {
 	sqlDB, err := u.db.DB()
-	if err != nil || sqlDB.Ping() != nil {
-		return "🔴disconnected"
-	} else {
-		return "🟢connect"
+	if err != nil {
+		return err
 	}
+	return sqlDB.PingContext(ctx)
 }
 
 func ProvideUserRepository(db *gorm.DB) UserRepository {

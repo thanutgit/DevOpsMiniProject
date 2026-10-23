@@ -11,10 +11,11 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	AppPort string `envconfig:"APP_PORT" default:"3010"`
-	Service string `envconfig:"APP_SERVICE" default:"server"`
-	Env     string `envconfig:"APP_ENV" default:"development"`
-	Cluster string `envconfig:"CLUSTER_NAME" default:"unknown"`
+	AppPort   string `envconfig:"APP_PORT" default:"3010"`
+	Service   string `envconfig:"APP_SERVICE" default:"server"`
+	Env       string `envconfig:"APP_ENV" default:"development"`
+	Cluster   string `envconfig:"CLUSTER_NAME" default:"unknown"`
+	Namespace string `envconfig:"POD_NAMESPACE" default:"unknown"`
 }
 
 type DatabaseConfig struct {

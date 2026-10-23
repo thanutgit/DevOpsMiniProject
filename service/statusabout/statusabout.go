@@ -1,17 +1,18 @@
-package service_status_about
+package statusabout
 
 import (
 	"DevOpsMiniProject/util"
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
+
+	"DevOpsMiniProject/di/config"
 
 	"github.com/gofiber/fiber/v3"
 )
 
 type StatusAbout interface {
-	GetAllInfo(c fiber.Ctx) error
+	GetAllInfo(c fiber.Ctx, cfg *config.Config) error
 }
 
 type statusAbout struct{}
@@ -26,7 +27,7 @@ var routeDescriptions = map[string]string{
 	"GET /Grafana": "Grafana dashboard",
 }
 
-func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
+func (s statusAbout) GetAllInfo(c fiber.Ctx, cfg *config.Config) error {
 	//loop route
 	routes := c.App().GetRoutes()
 	var endPoints strings.Builder
@@ -42,7 +43,7 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 		endPoints.WriteString(fmt.Sprintf("\t%s %s - %s\n", route.Method, route.Path, desc))
 	}
 
-	env := os.Getenv("APP_ENV")
+	env := cfg.Server.Env
 	serviceName := "Mini_Devops_Project"
 	description := "A simple Go API for DevOps mini project"
 	owner := "Thanut"
@@ -52,11 +53,8 @@ func (s statusAbout) GetAllInfo(c fiber.Ctx) error {
 	buildTime := util.Buildtime()
 	goVersion := runtime.Version()
 	environment := env
-	clusterInfo := os.Getenv("CLUSTER_NAME")
-	if clusterInfo == "" {
-		clusterInfo = "unknown"
-	}
-	namespace := os.Getenv("POD_NAMESPACE")
+	clusterInfo := cfg.Server.Cluster
+	namespace := cfg.Server.Namespace
 
 	output := fmt.Sprintf(`
 	Mini Production Platform
