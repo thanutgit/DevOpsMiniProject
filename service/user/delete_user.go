@@ -1,7 +1,10 @@
 package user
 
 import (
+	"DevOpsMiniProject/repository"
 	"DevOpsMiniProject/util"
+	"errors"
+	"log"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -13,14 +16,17 @@ type DeleteUserRequest struct {
 func (u userService) HandleDeleteUser(c fiber.Ctx) error {
 	var request DeleteUserRequest
 
-	err := util.ValidateRequest(c, &request)
-	if err != nil {
-		return err
+	if err := util.ValidateRequest(c, &request); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 
-	err = u.userRepository.DeleteUser(request.Username)
+	err := u.userRepository.DeleteUser(request.Username)
+	if errors.Is(err, repository.ErrUserNotFound) {
+		return fiber.NewError(fiber.StatusNotFound, "user not found")
+	}
 	if err != nil {
-		return err
+		log.Printf("delete user failed: %v", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "internal error")
 	}
 
 	return c.Status(fiber.StatusOK).SendString("Delete user : " + request.Username)

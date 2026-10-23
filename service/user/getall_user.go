@@ -2,17 +2,19 @@ package user
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/gofiber/fiber/v3"
 )
 
 func (u userService) HandleGetAllUser(c fiber.Ctx) error {
 	users, err := u.userRepository.GetAllUser()
-	var result string
 	if err != nil {
-		return err
+		log.Printf("get all users failed: %v", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "internal error")
 	}
 
+	var result string
 	if len(users) == 0 {
 		return c.SendString("No user found")
 	}

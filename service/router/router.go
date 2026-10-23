@@ -16,7 +16,7 @@ func InitRouter(server *fiber.App, db *gorm.DB) {
 	userService := user.ProvideUserService(userRepository)
 	aboutService := statusabout.ProvideStatusAbout()
 	homeService := statushome.ProvideHomeService(userRepository)
-	healthzService := healthz.ProvideHealthzService(db)
+	healthzService := healthz.ProvideHealthzService(userRepository)
 
 	server.Post("/user", userService.HandleCreateUser)
 	server.Delete("/user", userService.HandleDeleteUser)

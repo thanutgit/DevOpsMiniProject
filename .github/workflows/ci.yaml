@@ -1,52 +1,44 @@
 name: CI
 on:
   pull_request:
-    branches: [main, dev]   # รันเมื่อเปิด PR ที่ปลายทางเป็น main หรือ dev
+    branches: [main, dev]   
   push:
-    branches: [dev]         # รันเมื่อ push เข้า dev โดยตรงด้วย
+    branches: [dev]        
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      # 1) ดึงโค้ดจาก repo ลงมาในเครื่อง runner
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2) ติดตั้ง Go ตาม version ในโปรเจค
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true        # cache module ไว้ รอบหน้าเร็วขึ้น
+          cache: true       
 
-      # 3) โหลด dependency ทั้งหมดที่ระบุใน go.mod
       - name: Download dependencies
         run: go mod download
 
-      # 4) เช็คว่า go.mod / go.sum สะอาด (tidy) — กันปัญหา dependency ไม่ครบ
       - name: Verify go.mod is tidy
         run: |
           go mod tidy
           git diff --exit-code go.mod go.sum
 
-      # 5) go vet — ตรวจ bug พื้นฐานที่ compiler ไม่จับ (เช่นใช้ format ผิด)
       - name: Vet
         run: go vet ./...
 
-      # 6) Build — คอมไพล์ทั้งโปรเจค ถ้า import พัง/syntax ผิด จะ fail ตรงนี้
       - name: Build
         run: go build ./...
 
-      # 7) Test — รัน unit test ทั้งหมด (-v = แสดงรายละเอียด)
       - name: Test
-        run: go test ./... -v
+        run: go test ./... -race -cover
   security:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # สแกน repo: dependency ใน go.mod, secret ที่เผลอ commit, config ของ Dockerfile/k8s
       - name: Scan repository
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -57,7 +49,6 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
-      # build image ในเครื่อง CI (ไม่ push) แล้วสแกน package ใน alpine + binary
       - name: Build image
         run: docker build -t devopsminiproject:ci .
 
