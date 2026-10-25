@@ -93,4 +93,3 @@ jobs:
         run: |
           docker push "$IMAGE"
           echo "pushed: $(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
-          cache-from: type=gha
