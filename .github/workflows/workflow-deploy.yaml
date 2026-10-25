@@ -46,7 +46,12 @@ jobs:
           kubectl apply -f configmap-${{ github.event.inputs.environment }}.yaml
           kubectl delete job devops-project-job -n devops-project --ignore-not-found
           kubectl apply -f job.yaml
-          kubectl -n devops-project wait --for=condition=complete job/devops-project-job --timeout=10m 
+          kubectl -n devops-project wait job/devops-project-job --for=condition=complete --for=condition=failed --timeout=10m
+          if [ "$(kubectl -n devops-project get job devops-project-job -o jsonpath='{.status.succeeded}')" != "1" ]; then
+            echo "::error::migration job failed"
+            kubectl -n devops-project logs job/devops-project-job --tail=50
+            exit 1
+          fi
           kubectl apply -f app.yaml
           kubectl rollout restart deployment/app-api -n devops-project
           kubectl rollout status deployment/app-api -n devops-project --timeout=10m

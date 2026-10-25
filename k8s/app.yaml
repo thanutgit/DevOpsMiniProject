@@ -1,8 +1,8 @@
-apiVersion : apps/v1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name : app-api
-  namespace : devops-project 
+  name: app-api
+  namespace: devops-project
 spec:
   selector:
     matchLabels:

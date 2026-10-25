@@ -3,7 +3,14 @@ on:
   pull_request:
     branches: [main, dev]   
   push:
-    branches: [dev]        
+    branches: [dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -26,14 +33,14 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
-      - name: Vet
+      - name: Vet # ตรวจบั๊กที่ compiler ไม่จับ เช่น Printf("%d", "string") ผิด format, ลืม defer cancel() หลัง WithTimeout (./... = ทุก package ในโปรเจกต์)
         run: go vet ./...
 
       - name: Build
         run: go build ./...
 
       - name: Test
-        run: go test ./... -race -cover
+        run: go test ./... -race -cover # -reace เปิดตัวตรวจ race condition (เช่น ถ้ามีคนเปลี่ยน atomic กลับเป็น ++), -cover: แสดง % ของโค้ดที่ test ไปถึง ดูได้ใน log
   security:
     runs-on: ubuntu-latest
     steps:
@@ -42,9 +49,9 @@ jobs:
       - name: Scan repository
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,secret,misconfig
+          scan-type: fs #สแกนไฟล์ในโฟลเดอร์ (ไม่ใช่ image)
+          scan-ref: . #โฟลเดอร์ไหน: ทั้ง repo
+          scanners: vuln,secret,misconfig #vuln = ช่องโหว่ใน library (go.mod), secret = รหัสผ่าน/token ที่เผลอ commit, misconfig = ตั้งค่าไม่ปลอดภัยใน Dockerfile/k8s yaml
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: '1'
