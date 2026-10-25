@@ -1,19 +1,18 @@
-permissions:
-  contents: read
-  packages: write
-
 name: Build Image
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version tag (e.g. v2026.03.06)'
+        description: 'Version tag (e.g. v2026.10.25)'
         required: true
-        default: ''
+
+permissions:
+  contents: read # checkout โค้ดได้
+  packages: write # push image ขึ้น GHCR ได้
+  checks: read  # อ่านผล CI ได้
 
 jobs:
-
   Build:
     if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -25,6 +24,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Require CI to pass for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for check in test security; do
+            conclusion=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?check_name=$check" \
+              --jq '.check_runs[0].conclusion')
+            echo "$check: ${conclusion:-not found}"
+            if [ "$conclusion" != "success" ]; then
+              echo "::error::CI job '$check' has not passed for ${{ github.sha }}"
+              exit 1
+            fi
+          done
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -35,7 +48,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # กันไม่ให้ทับ tag เดิม (เดิมคุณมีอยู่แล้ว เก็บไว้)
+      # tag ห้ามซ้ำ (immutable) → node ใช้ imagePullPolicy: IfNotPresent ได้อย่างปลอดภัย
       - name: Check if tag exists
         run: |
           if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
@@ -43,17 +56,17 @@ jobs:
             exit 1
           fi
 
-      # คำนวณเวลา build ส่งให้ Dockerfile ผ่าน build-arg
+      # เวลา build (UTC, RFC3339) ส่งให้ Dockerfile ผ่าน build-arg
       - name: Set build time
         id: meta
         run: echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      # build + push รวมในขั้นตอนเดียว ผ่าน buildkit (เสถียร ไม่เจอ unknown blob)
-      - name: Build and Push
+      # รอบ 1: build เก็บไว้ใน runner เพื่อสแกน (ยังไม่ push)
+      - name: Build (local, for scanning)
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          load: true #build แยก (BuildKit) ขึ้นมาใน container ของมันเอง ไม่ได้ใช้ที่เก็บ image ของ Docker ตรงๆ เลยต้องมี load: true เพื่อเอา image ที่ build เสร็จแล้วไปเก็บใน Docker Engine ของ runner
           provenance: false
           tags: ${{ env.IMAGE }}
           build-args: |
@@ -62,3 +75,22 @@ jobs:
             COMMIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      # สแกนชิ้นที่จะขึ้น GHCR จริง เจอ CRITICAL ที่แก้ได้ → หยุด ไม่ push
+      - name: Scan image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      # push image ตัวที่เพิ่งสแกน (ไม่ build ซ้ำ)
+      - name: Push
+        run: |
+          docker push "$IMAGE"
+          echo "pushed: $(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
+          cache-from: type=gha
