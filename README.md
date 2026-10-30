@@ -30,7 +30,7 @@ variable:
 
 | Environment | Infrastructure | Database | เข้าถึง |
 |---|---|---|---|
-| **dev** | k3s บน VirtualBox VM (local) | Aiven MySQL (database `*_dev`) | HTTP ผ่าน IP ของ VM |
+| **dev** | k3s บน VirtualBox VM 2 เครื่อง (master + worker) สร้างจาก playbook เดียวกับ prd | Aiven MySQL (database `*_dev`) | HTTP ผ่าน IP ของ VM |
 | **prd** | k3s บน VPS 2 เครื่อง (control-plane 1 + worker 1) | Aiven MySQL (database production) | HTTPS ผ่าน `45.150.128.180.nip.io` |
 
 > dev ไม่มี TLS เพราะอยู่ใน IP ภายใน Let's Encrypt ยิงเข้ามาตรวจ (HTTP-01) ไม่ถึง
@@ -77,12 +77,12 @@ flowchart TD
 ```mermaid
 flowchart LR
     Push[Push เข้า dev branch] --> CI{CI<br/>test + security scan}
-    CI -->|ผ่าน| Build[Build image ครั้งเดียว<br/>devopsminiproject-dev:TAG]
+    CI -->|ผ่าน| Build[Build Image<br/>เช็กว่า CI ของ commit นี้ผ่าน<br/>build → Trivy scan → push<br/>-dev:TAG + label commit]
     Build --> DevDeploy[Deploy dev + ทดสอบ]
     DevDeploy --> PR[Pull Request dev to main<br/>CI ต้องผ่านก่อน merge]
-    PR -->|merge| Promote[Promote จาก main<br/>copy image ไป -prd:TAG<br/>ตรวจ digest ตรงกัน]
+    PR -->|merge commit| Promote[Promote จาก main<br/>commit ใน image ต้องอยู่บน main<br/>copy manifest ไป -prd:TAG<br/>ตรวจ digest ตรงกัน]
     Promote --> PrdDeploy[Deploy prd ด้วย TAG เดิม]
-    PrdDeploy --> K8s[apply manifests<br/>รัน migrate Job แล้ว rollout]
+    PrdDeploy --> K8s[migrate Job ต้องสำเร็จก่อน<br/>แล้วค่อย rollout แอป]
 ```
 
 ---
@@ -96,10 +96,10 @@ flowchart LR
 | **Orchestration** | Kubernetes (k3s), Traefik Ingress, Helm |
 | **Infrastructure as Code** | Ansible (roles: common, k3s_server, k3s_agent, platform, github_runner), Ansible Vault |
 | **TLS** | cert-manager, Let's Encrypt (HTTP-01) |
-| **Security** | Trivy (scan repo + image), Kubernetes securityContext (non-root, read-only filesystem) |
-| **CI/CD** | GitHub Actions, self-hosted runners, GitHub Environments |
+| **Security** | Trivy (scan repo + image ก่อน push), Kubernetes RBAC + Pod Security Admission, securityContext (non-root, read-only filesystem) |
+| **CI/CD** | GitHub Actions, Docker Buildx (GHA layer cache), self-hosted runners, GitHub Environments |
 | **Monitoring / Alerting** | Prometheus, Grafana, Alertmanager (kube-prometheus-stack), แจ้งเตือนผ่าน Discord |
-| **Testing** | Go testing (table-driven unit tests), k6 (load testing) |
+| **Testing** | Go testing (table-driven, handler tests ด้วย fake repository, `-race`), k6 (load testing) |
 | **Database** | MySQL (Aiven) |
 | **Infrastructure** | VPS (production), VirtualBox (development) |
 
@@ -149,34 +149,51 @@ flowchart LR
   22/80/443 และ SSH รับเฉพาะ key (ปิด password และ keyboard-interactive, root เข้าได้
   ด้วย key เท่านั้น) ตรวจ syntax ด้วย `sshd -t` ก่อนวางไฟล์ และยืนยันค่าที่ใช้จริงด้วย
   `sshd -T`
-- **Image promotion (build once, deploy many)** — build image ครั้งเดียวบน dev แล้ว
-  promote image ตัวเดิมไป prd ด้วย `docker buildx imagetools create` โดยไม่ build ใหม่
-  workflow ตรวจว่า **digest ของ dev และ prd ตรงกัน** เพื่อยืนยันว่า prd รัน image
-  ตัวเดียวกับที่ทดสอบแล้ว, promote ได้จาก `main` เท่านั้น (ต้องผ่าน PR + CI) และ
-  ห้ามเขียนทับ tag ที่มีอยู่แล้วบน prd
-- **Security scanning ใน CI (Trivy)** — สแกน repository (ช่องโหว่ของ dependency,
-  secret ที่หลุดในโค้ด, misconfiguration ของ Dockerfile/Kubernetes manifest) และสแกน
-  container image ที่ build จริง พบช่องโหว่ระดับ HIGH/CRITICAL ที่มีแพตช์แล้ว CI จะ fail
-  และเป็น required check ก่อน merge เข้า `main`
+- **Build pipeline ที่สแกนของชิ้นเดียวกับที่ส่งออก** — Build Image จะ build ได้ก็ต่อเมื่อ
+  CI (`test` + `security`) ของ commit นั้นผ่านแล้ว (ตรวจผ่าน GitHub API) จากนั้น build
+  ครั้งเดียวด้วย Buildx (`load: true`) → Trivy สแกน image (เจอ CRITICAL ที่มีแพตช์ → หยุด)
+  → push **image ตัวที่สแกน** ไม่ build ใหม่ ติด label มาตรฐาน OCI
+  (`org.opencontainers.image.revision` = commit, `.source` = repo) และใช้ layer cache
+  ข้ามรอบ (`type=gha`) tag ห้ามซ้ำ (immutable) จึงใช้ `imagePullPolicy: IfNotPresent` ได้ปลอดภัย
+- **Image promotion (build once, deploy many)** — promote image ตัวเดิมจาก `-dev` ไป `-prd`
+  ด้วย `docker buildx imagetools create --prefer-index=false` (copy manifest ภายใน registry
+  ไม่ build ใหม่ ไม่ดาวน์โหลด layer) แล้วตรวจว่า **digest ของ dev และ prd ตรงกัน**
+  ก่อน promote ตรวจว่า **commit ที่อยู่ใน image (อ่านจาก label) อยู่บน `main` แล้ว**
+  (`git merge-base --is-ancestor`) จึงมั่นใจว่าโค้ดผ่าน PR + CI จริง ไม่ใช่แค่กด workflow จาก
+  main และห้ามเขียนทับ tag ที่มีอยู่แล้วบน prd
+- **Security scanning (Trivy)** — CI สแกน repository (ช่องโหว่ของ dependency รวมตัวทางอ้อม,
+  secret ที่หลุดในโค้ด, misconfiguration ของ Dockerfile/Kubernetes manifest) เจอ HIGH/CRITICAL
+  ที่มีแพตช์แล้วจะ fail และเป็น required check ก่อน merge เข้า `main` ส่วน image (รวมแพ็กเกจ
+  ของ base image ที่สแกน repo มองไม่เห็น) ถูกสแกนก่อน push ใน Build Image
 - **Container hardening** — รันเป็น non-root user (UID 10001), root filesystem แบบ
   read-only, ตัด Linux capabilities ทั้งหมด, ปิด privilege escalation และใช้
   seccomp profile `RuntimeDefault`
 - **Multi-stage Docker build** — แยก stage build ออกจาก runtime ทำให้ image เล็กลงมาก
   และฝัง build metadata (version, build time, commit SHA) ลงใน binary ผ่าน `-ldflags`
   แสดงผลที่ endpoint `/about`
-- **Database migration เป็น Kubernetes Job** ที่รันจนเสร็จก่อนจะ rollout แอป โดยใช้
-  image ตัวเดียวกันในโหมด `migrator`
+- **Database migration เป็น Kubernetes Job** ที่ต้องสำเร็จก่อนจะ rollout แอป โดยใช้
+  image ตัวเดียวกันในโหมด `migrator` workflow รอทั้งกรณีสำเร็จและล้ม ถ้าล้มจะพิมพ์ log
+  ของ Job ลงใน workflow แล้วหยุด แอปเวอร์ชันเดิมยังรันต่อ
 - **แยก health probes ชัดเจน**:
-  - `/livez` (liveness) — เช็คแค่ว่า process ยังทำงาน **ไม่แตะ DB** เพื่อไม่ให้
-    DB หลุดชั่วคราวทำให้ pod ถูก restart โดยไม่จำเป็น
-  - `/readyz` (readiness) — เช็ค database ด้วย เพื่อส่ง traffic เข้าเฉพาะ pod ที่
-    พร้อมให้บริการจริง
+  - `/livez` (liveness) — เช็คแค่ว่า process ยังทำงาน **ไม่แตะ DB** DB ล่มระหว่างรันจึง
+    ไม่ทำให้ pod ถูก restart วนซ้ำ (restart ไม่ได้แก้ปัญหาที่ DB)
+  - `/readyz` (readiness) — ping database ภายใน **800ms** (สั้นกว่า timeout 1 วินาทีของ
+    probe) ไม่ผ่านตอบ 503 → pod หยุดรับ traffic แต่ไม่ถูก restart และกลับมาเองเมื่อ DB ฟื้น
+    timeout ทำให้ไม่มี request ค้างจอง connection ไว้เมื่อ DB ค้าง
+  - หมายเหตุ: ครอบคลุมกรณี DB ล่ม**ระหว่างรัน** ถ้า DB ล่มตอน pod เริ่ม แอปจะต่อ DB ไม่ได้
+    แล้วจบ (CrashLoopBackOff) จนกว่า DB จะกลับมา
+- **HTTP status ตามความหมาย** — input ผิด 400, username ซ้ำ 409 (unique index +
+  `TranslateError`), ไม่พบ user 404, สร้างสำเร็จ 201 ส่วน 500 บันทึกสาเหตุจริงใน log
+  แต่ตอบผู้ใช้แค่ `internal error`
 - **HTTPS อัตโนมัติ** — cert-manager ขอและต่ออายุ certificate จาก Let's Encrypt
   ทดสอบกับ staging issuer ก่อนเปลี่ยนเป็น production เพื่อเลี่ยง rate limit
   และ redirect HTTP → HTTPS ทุก request ด้วย Traefik Middleware
 - **Horizontal Pod Autoscaler** — scale `app-api` จาก 3 ถึง 6 replicas ที่ CPU
   85% (ทดสอบด้วย k6)
-- **Unit tests แบบ table-driven** รันใน CI ก่อน merge ทุกครั้ง
+- **Handler tests โดยไม่ต้องมี database** — service รับ `UserRepository` (interface) ผ่าน
+  dependency injection test จึงส่ง fake repository ที่กำหนดได้ว่าจะคืนอะไร แล้วยิง HTTP
+  เข้า handler จริง ครอบ 201/400/404/409/500, `/livez` ยังตอบ 200 แม้ DB พัง และ `/readyz`
+  ต้องตอบ 503 ภายใน 950ms เมื่อ DB ค้าง รันใน CI ด้วย `-race -cover` ก่อน merge ทุกครั้ง
 - **การแยก config ตาม environment** — secret แยกผ่าน GitHub Environments,
   ConfigMap และ Ingress แยกไฟล์ต่อ environment
 - **แยก platform กับ application** — Ansible ดูแลของที่ตั้งครั้งเดียวต่อ cluster
@@ -202,20 +219,24 @@ flowchart LR
 2. ทุกครั้งที่ push/PR **CI workflow** จะรันอัตโนมัติ 2 job:
    - `test` — ตรวจ `go mod tidy` → `go vet` → `go build` → `go test`
    - `security` — Trivy สแกน repository และ container image
-3. **Build image ครั้งเดียว** เป็น `devopsminiproject-dev:<tag>` แล้ว deploy ขึ้น
-   **dev** เพื่อทดสอบบน cluster จริง
+3. **Build image ครั้งเดียว** เป็น `devopsminiproject-dev:<tag>` (ต้องผ่าน CI ของ commit นั้น
+   ก่อน และ image ต้องผ่าน Trivy ก่อน push) แล้ว deploy ขึ้น **dev** เพื่อทดสอบบน cluster จริง
 4. **Pull Request** จาก `dev` เข้า `main` ต้องให้ `test` และ `security` ผ่านก่อน
-   ถึง merge ได้ (บังคับด้วย branch ruleset บน `main`)
+   ถึง merge ได้ (บังคับด้วย branch ruleset บน `main`) และ merge แบบ **merge commit**
+   เพื่อให้ commit ที่ build ไว้อยู่ในประวัติของ `main`
 5. **Promote** image tag เดิมจาก `-dev` ไป `-prd` (รันจาก `main` เท่านั้น) โดยไม่
-   build ใหม่ และตรวจว่า digest ตรงกัน
+   build ใหม่ ตรวจว่า commit ใน image อยู่บน `main` และ digest ตรงกัน
 6. **Deploy ขึ้น production แบบ manual** ด้วย tag เดิม (คุมจังหวะการ release เอง)
 
 | Workflow | Trigger | หน้าที่ |
 |---|---|---|
-| `ci.yaml` | push / PR | test (tidy, vet, build, test) และ security (Trivy scan) |
-| `workflow.yaml` | manual | build image **dev** แล้ว push เข้า GHCR (Docker Buildx) ใช้ tag แบบ calendar versioning |
-| `promote.yaml` | manual | promote image จาก dev ไป prd โดยไม่ build ใหม่ และตรวจ digest |
-| `workflow-deploy.yaml` | manual | deploy ขึ้น dev หรือ prd (self-hosted runner แยก label ต่อ environment) |
+| `ci.yaml` | push / PR | test (tidy, vet, build, test `-race -cover`) และ security (Trivy scan) ยกเลิกรอบเก่าเมื่อ push ซ้ำ |
+| `workflow.yaml` | manual | เช็ก CI → build (Buildx + cache) → Trivy scan → push image **dev** เข้า GHCR ใช้ tag แบบ calendar versioning ห้ามซ้ำ |
+| `promote.yaml` | manual | promote image จาก dev ไป prd โดยไม่ build ใหม่ ตรวจ commit อยู่บน main และ digest ตรงกัน |
+| `workflow-deploy.yaml` | manual | deploy ขึ้น dev หรือ prd (self-hosted runner แยก label ต่อ environment, ใช้สิทธิ์ของ SA `deployer`) |
+
+> `GITHUB_TOKEN` ของแต่ละ workflow ได้สิทธิ์เท่าที่ใช้ (`permissions:`) และค่าที่ผู้ใช้พิมพ์เข้ามา
+> (เช่น tag) ถูกส่งผ่าน `env:` แทนการแทรก `${{ }}` ลงในสคริปต์ตรง ๆ เพื่อกัน script injection
 
 > ใช้ 2 package ใน GHCR (`devopsminiproject-dev` และ `devopsminiproject-prd`) แทน
 > registry แยกต่อ environment ใน `-prd` จึงมีเฉพาะ image ที่ผ่านการทดสอบบน dev และ
@@ -232,35 +253,42 @@ flowchart LR
 ```
 .
 ├── cmd/                      # Entrypoint ของแอป (โหมด server / migrator)
-├── di/                       # Dependency injection: config, database, server
-├── service/                  # HTTP handlers (user CRUD, status, health) + unit tests
-├── repository/               # Data access layer (GORM)
+├── di/                       # setup: config (อ่าน env ครั้งเดียว), database, server
+├── service/
+│   ├── router/               # ผูก URL → handler และประกอบ dependency (repository → services)
+│   ├── user/                 # POST/GET/DELETE /user + handler tests (fake repository)
+│   ├── healthz/              # /livez, /readyz (timeout 800ms) + tests
+│   ├── statushome/           # หน้า /
+│   └── statusabout/          # หน้า /about
+├── repository/               # Data access layer (GORM) + interface UserRepository
 ├── entity/                   # Domain models
-├── util/                     # Build info, helpers + unit tests
-├── k8s/
-│   ├── platform/             # ตั้งครั้งเดียวต่อ cluster (ไม่ได้ deploy ทุก release)
-│   │   ├── cluster-issuer.yaml       # Let's Encrypt staging + production
-│   │   ├── cert-manager-values.yaml  # ค่าของ cert-manager (เปิด ServiceMonitor)
-│   │   ├── cert-alerts.yaml          # PrometheusRule: cert ใกล้หมดอายุ / ไม่ Ready
-│   │   └── monitoring-values.yaml    # ค่าของ kube-prometheus-stack + Alertmanager route
-│   ├── namespace.yaml
+├── util/                     # Build info, request validation + unit tests
+├── k8s/                      # ===== CI deploy (ของแอป ทุก release) =====
 │   ├── configmap-dev.yaml / configmap-prd.yaml
-│   ├── app.yaml              # Deployment + Service
+│   ├── app.yaml              # Deployment
 │   ├── job.yaml              # DB migration Job
 │   ├── hpa.yaml              # HorizontalPodAutoscaler
-│   ├── ingress-dev.yaml      # HTTP
-│   └── ingress-prd.yaml      # HTTPS + cert-manager + redirect middleware
+│   └── platform/             # ===== Ansible apply (ตั้งครั้งเดียวต่อ cluster) =====
+│       ├── app-namespace.yaml        # namespace + Pod Security restricted
+│       ├── deployer-rbac.yaml        # ServiceAccount + Role ของ CI
+│       ├── app-network-vm.yaml / app-network-prd.yaml       # Service + Ingress ของแอป
+│       ├── grafana-ingress-vm.yaml / grafana-ingress-prd.yaml
+│       ├── cluster-issuer.yaml       # Let's Encrypt staging + production
+│       ├── cert-manager-values.yaml  # ค่าของ cert-manager (เปิด ServiceMonitor)
+│       ├── cert-alerts.yaml          # PrometheusRule: cert ใกล้หมดอายุ / ไม่ Ready
+│       └── monitoring-values.yaml    # ค่าของ kube-prometheus-stack + Alertmanager route
 ├── ansible/                  # Provision k3s cluster (IaC)
-│   ├── inventory.ini         # VM ทดสอบ (master / workers + k3s_version)
+│   ├── inventory.ini         # dev (VM master / worker)
 │   ├── inventory-prd.ini     # VPS production
-│   ├── site.yaml             # playbook หลัก: common → k3s_server → k3s_agent → platform
+│   ├── site.yaml             # common → k3s_server → k3s_agent → platform → github_runner
 │   ├── requirements.yaml     # pin Ansible collections
 │   ├── secrets/              # vm.yaml / prd.yaml เข้ารหัสด้วย Ansible Vault
 │   └── roles/
 │       ├── common/           # SSH keys, SSH hardening, hostname, cloud-init, netplan, ufw
 │       ├── k3s_server/       # ติดตั้ง server, อ่าน token, ตั้ง kubeconfig
 │       ├── k3s_agent/        # ติดตั้ง agent แล้ว join master
-│       └── platform/         # helm, kube-prometheus-stack, cert-manager, ClusterIssuer, alert rules
+│       ├── platform/         # helm, monitoring, cert-manager, apply k8s/platform/*
+│       └── github_runner/    # self-hosted runner (user gha-runner, kubeconfig ของ deployer)
 ├── .github/workflows/        # CI + security scan, build, promote, deploy pipelines
 └── Dockerfile                # Multi-stage build
 ```
@@ -269,15 +297,27 @@ flowchart LR
 
 ## API Endpoints
 
-| Method | Path | คำอธิบาย |
-|---|---|---|
-| `GET` | `/` | ภาพรวมสถานะ runtime |
-| `GET` | `/about` | ข้อมูล service (version, build time, commit) |
-| `GET` | `/livez` | Liveness probe (เช็คแค่ process) |
-| `GET` | `/readyz` | Readiness probe (เช็ค DB) |
-| `GET` | `/user` | ดูรายชื่อ user ทั้งหมด |
-| `POST` | `/user` | สร้าง user |
-| `DELETE` | `/user` | ลบ user |
+| Method | Path | คำอธิบาย | Status |
+|---|---|---|---|
+| `GET` | `/` | ภาพรวมสถานะ runtime | 200 |
+| `GET` | `/about` | ข้อมูล service (version, build time, commit) | 200 |
+| `GET` | `/livez` | Liveness probe (เช็คแค่ process) | 200 |
+| `GET` | `/readyz` | Readiness probe (ping DB ภายใน 800ms) | 200 / 503 |
+| `GET` | `/user` | ดูรายชื่อ user ทั้งหมด | 200 / 500 |
+| `POST` | `/user` | สร้าง user (`username` ≥ 3 ตัวอักษร, `name` บังคับ) | 201 / 400 / 409 / 500 |
+| `DELETE` | `/user` | ลบ user ตาม `username` | 200 / 400 / 404 / 500 |
+
+---
+
+## Testing
+
+```bash
+go test ./... -race -cover
+```
+- **handler tests** (`service/user`, `service/healthz`) ใช้ fake repository แทน database
+  จึงรันได้ทุกที่ รวมถึงใน CI โดยไม่ต้องมี MySQL
+- **unit tests** ของ build info (`util`) เช่น แปลงเวลา RFC3339 เป็นเวลาไทยและรับมือค่าผิดรูปแบบ
+- ส่วนที่ fake repository ครอบไม่ถึง (คำสั่ง SQL จริง, unique index) ทดสอบบน dev cluster
 
 ---
 
