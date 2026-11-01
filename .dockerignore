@@ -1,0 +1,8 @@
+.git
+.github
+ansible
+k8s
+*.md
+*.png
+git-filter-repo
+.env

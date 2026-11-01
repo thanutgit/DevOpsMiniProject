@@ -26,6 +26,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -34,11 +38,24 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}     
 
-      # ต้องมีบน dev จริง = เคยถูก build และ deploy dev มาแล้ว
+      # ต้องมี image บน dev (กันพิมพ์ tag ผิด)
       - name: Check dev image exists
         run: docker buildx imagetools inspect "$DEV_IMAGE:$TAG"
+
+      # โค้ดใน image ต้องผ่าน PR เข้า main แล้ว
+      - name: Image must come from a commit on main
+        run: |
+          SHA=$(docker buildx imagetools inspect "$DEV_IMAGE:$TAG" \
+            --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}')
+          if [ -z "$SHA" ] || [ "$SHA" = "<no value>" ]; then
+            echo "::error::image has no revision label (built before labels were added?) — rebuild it"
+            exit 1
+          fi
+          echo "image built from: $SHA"
+          git merge-base --is-ancestor "$SHA" origin/main \
+            || { echo "::error::commit $SHA is not on main"; exit 1; }
 
       # ห้ามเขียนทับ tag ที่มีอยู่บน prd แล้ว (tag ต้องไม่เปลี่ยนความหมาย)
       - name: Refuse to overwrite prd tag

@@ -1,53 +1,85 @@
-permissions:
-  contents: read
-  packages: write
-
 name: Deploy App
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version tag (e.g. v2026.03.06)'
+        description: 'Version tag (e.g. v2026.10.25)'
         required: true
-        default: ''
       environment:
         description: 'Environment'
         required: true
         type: choice
-        options: 
+        options:
           - dev
           - prd
 
-jobs:
+permissions:
+  contents: read
 
+# deploy ทีละรอบต่อ environment (ไม่ยกเลิกรอบที่กำลังทำอยู่)
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
   Deploy:
-    runs-on: ${{ github.event.inputs.environment == 'dev' && 'VirtualBox' || 'VPS' }}
-    environment: ${{ github.event.inputs.environment }}
+    runs-on: ${{ inputs.environment == 'dev' && 'VirtualBox' || 'VPS' }}
+    environment: ${{ inputs.environment }}
+
+    # ค่าจาก input/secret ส่งผ่าน env เสมอ (กัน script injection และกัน $ ในรหัสผ่านถูก bash ตีความ)
+    env:
+      ENV_NAME: ${{ inputs.environment }}
+      IMAGE: ghcr.io/thanutgit/devopsminiproject-${{ inputs.environment }}:${{ inputs.tag }}
+      NS: devops-project
+
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show identity
+        run: kubectl auth whoami
+
       - name: Update image tag
         run: |
-          sed -i 's|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ghcr.io/thanutgit/devopsminiproject-${{ github.event.inputs.environment }}:${{ github.event.inputs.tag }}|' k8s/job.yaml
-          sed -i 's|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ghcr.io/thanutgit/devopsminiproject-${{ github.event.inputs.environment }}:${{ github.event.inputs.tag }}|' k8s/app.yaml
-      - name : Deploy to K3s
-        run : |
-          set -e
-          cd k8s
-          kubectl create secret generic devops-project-secret \
-            --namespace devops-project \
-            --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
-            --from-literal=DB_NAME="${{ secrets.DB_NAME }}" \
-            --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-            --from-literal=DB_PORT="${{ secrets.DB_PORT }}" \
-            --from-literal=DB_USER="${{ secrets.DB_USER }}" \
+          sed -i "s|image: ghcr.io/thanutgit/devopsminiproject:.*|image: ${IMAGE}|" k8s/job.yaml k8s/app.yaml
+          grep -n "image:" k8s/job.yaml k8s/app.yaml
+
+      - name: Apply secret and config
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+        run: |
+          kubectl create secret generic devops-project-secret -n "$NS" \
+            --from-literal=DB_HOST="$DB_HOST" \
+            --from-literal=DB_NAME="$DB_NAME" \
+            --from-literal=DB_PASSWORD="$DB_PASSWORD" \
+            --from-literal=DB_PORT="$DB_PORT" \
+            --from-literal=DB_USER="$DB_USER" \
             --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f configmap-${{ github.event.inputs.environment }}.yaml
-          kubectl delete job devops-project-job -n devops-project --ignore-not-found
-          kubectl apply -f job.yaml
-          kubectl -n devops-project wait --for=condition=complete job/devops-project-job --timeout=10m 
-          kubectl apply -f app.yaml
-          kubectl rollout restart deployment/app-api -n devops-project
-          kubectl rollout status deployment/app-api -n devops-project --timeout=10m
-          kubectl apply -f hpa.yaml
+          kubectl apply -f "k8s/configmap-${ENV_NAME}.yaml"
+
+      - name: Run DB migration
+        run: |
+          kubectl delete job devops-project-job -n "$NS" --ignore-not-found
+          kubectl apply -f k8s/job.yaml
+          kubectl -n "$NS" wait job/devops-project-job \
+            --for=condition=complete --for=condition=failed --timeout=10m
+          if [ "$(kubectl -n "$NS" get job devops-project-job -o jsonpath='{.status.succeeded}')" != "1" ]; then
+            echo "::error::migration job failed"
+            kubectl -n "$NS" logs job/devops-project-job --tail=50
+            exit 1
+          fi
+
+      - name: Deploy app
+        run: |
+          kubectl apply -f k8s/app.yaml
+          kubectl rollout restart deployment/app-api -n "$NS"
+          if ! kubectl rollout status deployment/app-api -n "$NS" --timeout=10m; then
+            echo "::error::rollout failed, rolling back"
+            kubectl rollout undo deployment/app-api -n "$NS"
+            exit 1
+          fi
+          kubectl apply -f k8s/hpa.yaml
