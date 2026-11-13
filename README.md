@@ -83,6 +83,7 @@ flowchart LR
     PR -->|merge commit| Promote[Promote จาก main<br/>commit ใน image ต้องอยู่บน main<br/>copy manifest ไป -prd:TAG<br/>ตรวจ digest ตรงกัน]
     Promote --> PrdDeploy[Deploy prd ด้วย TAG เดิม]
     PrdDeploy --> K8s[migrate Job ต้องสำเร็จก่อน<br/>แล้วค่อย rollout แอป]
+    K8s -->|rollout ไม่ผ่านใน 10 นาที| Undo[rollout undo<br/>กลับเวอร์ชันก่อนหน้า]
 ```
 
 ---
@@ -174,6 +175,19 @@ flowchart LR
 - **Database migration เป็น Kubernetes Job** ที่ต้องสำเร็จก่อนจะ rollout แอป โดยใช้
   image ตัวเดียวกันในโหมด `migrator` workflow รอทั้งกรณีสำเร็จและล้ม ถ้าล้มจะพิมพ์ log
   ของ Job ลงใน workflow แล้วหยุด แอปเวอร์ชันเดิมยังรันต่อ
+- **Rollback อัตโนมัติ** — ถ้า `rollout status` ไม่ผ่านภายใน 10 นาที (เช่น pod ใหม่
+  readiness ไม่ผ่าน) workflow สั่ง `kubectl rollout undo` กลับเวอร์ชันก่อนหน้าแล้ว fail
+  ให้เห็น ระหว่างนั้น pod เก่ายังรับ traffic อยู่เพราะ rolling update ไม่ถอด pod เก่าจนกว่า
+  pod ใหม่จะ Ready deploy รันทีละรอบต่อ environment (`concurrency`, ไม่ยกเลิกรอบที่กำลังทำ)
+  และพิมพ์ `kubectl auth whoami` ทุกครั้งเพื่อยืนยันว่าใช้ตัวตน `deployer` จริง
+- **Graceful shutdown** — แอปดัก `SIGTERM` ที่ Kubernetes ส่งตอนลบ pod (rolling update,
+  scale down) ด้วย `signal.NotifyContext` แล้วส่งให้ Fiber หยุดรับ connection ใหม่และรอ
+  request ที่ค้างอยู่ให้จบภายใน 20 วินาที (น้อยกว่า `terminationGracePeriodSeconds` 30
+  วินาทีที่ kubelet รอก่อนส่ง `SIGKILL`) ตอน deploy จึงไม่มี request ถูกตัดกลางทาง
+- **จัดการ error ที่จุดเดียว** — `main()` เรียก `run() error` ทุกขั้นคืน error ที่ห่อ
+  บริบทด้วย `%w` (เช่น `init database: ...`) แทนการ `log.Fatal` กลางทาง ซึ่งเป็น `os.Exit`
+  ที่ข้าม `defer` ทั้งหมด ทำให้ปิด connection pool ของ DB ได้ทุกครั้ง และ exit code บอก
+  Kubernetes ได้ถูกต้อง (migration ล้ม = Job Failed, ปิดปกติ = 0)
 - **แยก health probes ชัดเจน**:
   - `/livez` (liveness) — เช็คแค่ว่า process ยังทำงาน **ไม่แตะ DB** DB ล่มระหว่างรันจึง
     ไม่ทำให้ pod ถูก restart วนซ้ำ (restart ไม่ได้แก้ปัญหาที่ DB)
@@ -218,7 +232,8 @@ flowchart LR
 1. งานทั้งหมดทำบน branch **`dev`**
 2. ทุกครั้งที่ push/PR **CI workflow** จะรันอัตโนมัติ 2 job:
    - `test` — ตรวจ `go mod tidy` → `go vet` → `go build` → `go test`
-   - `security` — Trivy สแกน repository และ container image
+   - `security` — Trivy สแกน repository (dependency, secret, misconfiguration)
+     ส่วน container image ถูกสแกนในขั้น build ก่อน push
 3. **Build image ครั้งเดียว** เป็น `devopsminiproject-dev:<tag>` (ต้องผ่าน CI ของ commit นั้น
    ก่อน และ image ต้องผ่าน Trivy ก่อน push) แล้ว deploy ขึ้น **dev** เพื่อทดสอบบน cluster จริง
 4. **Pull Request** จาก `dev` เข้า `main` ต้องให้ `test` และ `security` ผ่านก่อน
@@ -227,13 +242,15 @@ flowchart LR
 5. **Promote** image tag เดิมจาก `-dev` ไป `-prd` (รันจาก `main` เท่านั้น) โดยไม่
    build ใหม่ ตรวจว่า commit ใน image อยู่บน `main` และ digest ตรงกัน
 6. **Deploy ขึ้น production แบบ manual** ด้วย tag เดิม (คุมจังหวะการ release เอง)
+   ลำดับ: apply Secret/ConfigMap → migrate Job (ต้องสำเร็จ) → rollout แอป
+   (ไม่ผ่านใน 10 นาที → `rollout undo`) → apply HPA
 
 | Workflow | Trigger | หน้าที่ |
 |---|---|---|
 | `ci.yaml` | push / PR | test (tidy, vet, build, test `-race -cover`) และ security (Trivy scan) ยกเลิกรอบเก่าเมื่อ push ซ้ำ |
 | `workflow.yaml` | manual | เช็ก CI → build (Buildx + cache) → Trivy scan → push image **dev** เข้า GHCR ใช้ tag แบบ calendar versioning ห้ามซ้ำ |
 | `promote.yaml` | manual | promote image จาก dev ไป prd โดยไม่ build ใหม่ ตรวจ commit อยู่บน main และ digest ตรงกัน |
-| `workflow-deploy.yaml` | manual | deploy ขึ้น dev หรือ prd (self-hosted runner แยก label ต่อ environment, ใช้สิทธิ์ของ SA `deployer`) |
+| `workflow-deploy.yaml` | manual | deploy ขึ้น dev หรือ prd (self-hosted runner แยก label ต่อ environment, ใช้สิทธิ์ของ SA `deployer`) migrate ก่อน rollout และ rollback อัตโนมัติเมื่อ rollout ไม่ผ่าน |
 
 > `GITHUB_TOKEN` ของแต่ละ workflow ได้สิทธิ์เท่าที่ใช้ (`permissions:`) และค่าที่ผู้ใช้พิมพ์เข้ามา
 > (เช่น tag) ถูกส่งผ่าน `env:` แทนการแทรก `${{ }}` ลงในสคริปต์ตรง ๆ เพื่อกัน script injection
@@ -252,8 +269,8 @@ flowchart LR
 
 ```
 .
-├── cmd/                      # Entrypoint ของแอป (โหมด server / migrator)
-├── di/                       # setup: config (อ่าน env ครั้งเดียว), database, server
+├── cmd/                      # Entrypoint: main → run() เลือกโหมด server / migrator
+├── di/                       # setup: config (อ่าน env ครั้งเดียว), database, server (graceful shutdown)
 ├── service/
 │   ├── router/               # ผูก URL → handler และประกอบ dependency (repository → services)
 │   ├── user/                 # POST/GET/DELETE /user + handler tests (fake repository)
